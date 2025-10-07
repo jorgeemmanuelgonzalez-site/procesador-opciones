@@ -183,6 +183,10 @@ class OperationsProcessor {
         }));
       }
 
+      // Sanitizar y remover operaciones inválidas o neutras (cantidad 0 o precio inválido)
+      this.callsData = this.sanitizeOperations(this.callsData);
+      this.putsData = this.sanitizeOperations(this.putsData);
+
       // Guardar datos procesados y metadatos
       this.lastProcessedFile = new Date().toISOString();
       this.lastProcessedTime = new Date().toISOString();
@@ -348,10 +352,23 @@ class OperationsProcessor {
           ? parseFloat(row.last_qty)
           : -parseFloat(row.last_qty);
 
+      const precio = parseFloat(row.last_price);
+
+      // Descartar operaciones con cantidad 0, precio inválido o base inválida
+      if (
+        cantidad === 0 ||
+        !isFinite(precio) ||
+        isNaN(precio) ||
+        !isFinite(modifiedSymbol) ||
+        modifiedSymbol === 0
+      ) {
+        return;
+      }
+
       processed.push({
         cantidad: cantidad,
         base: modifiedSymbol,
-        precio: parseFloat(row.last_price),
+        precio: precio,
         F: putCall,
       });
     });
@@ -442,6 +459,17 @@ class OperationsProcessor {
     const strikeGroups = {};
 
     operations.forEach((op) => {
+      // Ignorar entradas inválidas desde el inicio
+      if (
+        !op ||
+        op.cantidad === 0 ||
+        !isFinite(op.base) ||
+        op.base === 0 ||
+        !isFinite(op.precio) ||
+        isNaN(op.precio)
+      ) {
+        return;
+      }
       const strike = op.base;
       if (!strikeGroups[strike]) {
         strikeGroups[strike] = {
@@ -469,16 +497,20 @@ class OperationsProcessor {
           (sum, op) => sum + Math.abs(op.cantidad),
           0
         );
-        const precioPromedioVentas =
-          group.ventas.reduce((sum, op) => {
-            return sum + op.precio * Math.abs(op.cantidad);
-          }, 0) / totalCantidadVentas;
+        if (totalCantidadVentas > 0) {
+          const precioPromedioVentas =
+            group.ventas.reduce((sum, op) => {
+              return sum + op.precio * Math.abs(op.cantidad);
+            }, 0) / totalCantidadVentas;
 
-        processedOperations.push({
-          cantidad: -totalCantidadVentas, // Negativo para ventas
-          base: parseFloat(strike),
-          precio: Math.round(precioPromedioVentas * 100) / 100,
-        });
+          if (isFinite(precioPromedioVentas)) {
+            processedOperations.push({
+              cantidad: -totalCantidadVentas, // Negativo para ventas
+              base: parseFloat(strike),
+              precio: Math.round(precioPromedioVentas * 100) / 100,
+            });
+          }
+        }
       }
 
       // Procesar compras (cantidades positivas)
@@ -487,16 +519,20 @@ class OperationsProcessor {
           (sum, op) => sum + op.cantidad,
           0
         );
-        const precioPromedioCompras =
-          group.compras.reduce((sum, op) => {
-            return sum + op.precio * op.cantidad;
-          }, 0) / totalCantidadCompras;
+        if (totalCantidadCompras > 0) {
+          const precioPromedioCompras =
+            group.compras.reduce((sum, op) => {
+              return sum + op.precio * op.cantidad;
+            }, 0) / totalCantidadCompras;
 
-        processedOperations.push({
-          cantidad: totalCantidadCompras,
-          base: parseFloat(strike),
-          precio: Math.round(precioPromedioCompras * 100) / 100,
-        });
+          if (isFinite(precioPromedioCompras)) {
+            processedOperations.push({
+              cantidad: totalCantidadCompras,
+              base: parseFloat(strike),
+              precio: Math.round(precioPromedioCompras * 100) / 100,
+            });
+          }
+        }
       }
     });
 
@@ -507,6 +543,34 @@ class OperationsProcessor {
       }
       return a.base - b.base; // Por strike ascendente
     });
+  }
+
+  /**
+   * Sanitiza operaciones: remueve inválidas y normaliza números
+   * @param {Array} operations
+   * @returns {Array}
+   */
+  sanitizeOperations(operations) {
+    if (!Array.isArray(operations)) return [];
+    return operations
+      .filter((op) => {
+        return (
+          op &&
+          typeof op.cantidad === "number" &&
+          op.cantidad !== 0 &&
+          typeof op.base === "number" &&
+          isFinite(op.base) &&
+          op.base !== 0 &&
+          typeof op.precio === "number" &&
+          isFinite(op.precio) &&
+          !isNaN(op.precio)
+        );
+      })
+      .map((op) => ({
+        cantidad: op.cantidad,
+        base: Math.round(op.base * 100) / 100,
+        precio: Math.round(op.precio * 100) / 100,
+      }));
   }
 
   /**
