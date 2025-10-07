@@ -528,10 +528,11 @@ class PopupManager {
         result.callsData.forEach((op) => {
           const row = document.createElement("tr");
           const cantidadClass = op.cantidad >= 0 ? "positive" : "negative";
+          const precio4 = Number(op.precio).toFixed(4);
           row.innerHTML = `
             <td class="${cantidadClass}">${op.cantidad}</td>
             <td>${op.base}</td>
-            <td>$${op.precio}</td>
+            <td>$${precio4}</td>
           `;
           callsTableBody.appendChild(row);
         });
@@ -550,10 +551,11 @@ class PopupManager {
         result.putsData.forEach((op) => {
           const row = document.createElement("tr");
           const cantidadClass = op.cantidad >= 0 ? "positive" : "negative";
+          const precio4 = Number(op.precio).toFixed(4);
           row.innerHTML = `
             <td class="${cantidadClass}">${op.cantidad}</td>
             <td>${op.base}</td>
-            <td>$${op.precio}</td>
+            <td>$${precio4}</td>
           `;
           putsTableBody.appendChild(row);
         });

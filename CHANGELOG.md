@@ -2,6 +2,11 @@
 
 Todas las modificaciones notables de este proyecto se documentarán en este archivo.
 
+## [1.0.2] - en proceso
+
+- Ajuste: precios ahora mantienen 4 decimales en cálculo y visualización.
+- Cálculo de promedios y sanitización sin truncar a 2 decimales.
+
 ## [1.0.1] - 2025-10-07
 
 - Fix: corrección del error al procesar operaciones con cantidades iguales a 0.
