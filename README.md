@@ -12,6 +12,11 @@ Una extensión de Chrome para procesar operaciones financieras de opciones desde
 - **Exportación múltiple**: Descarga archivos CSV o copia datos al portapapeles
 - **Sin autenticación**: Acceso directo a la funcionalidad sin necesidad de login
 
+## Historial de versiones
+
+- Consulta el historial completo en `CHANGELOG.md`.
+- Última versión: 1.0.1 — fix: corrección de error cuando las cantidades eran iguales a 0.
+
 ## Instalación
 
 1. Descarga o clona este repositorio
