@@ -1,16 +1,12 @@
 // Popup script ultra-simplificado para Procesador de opciones
-console.log("Procesador de opciones Popup - Cargado");
 
 class PopupManager {
   constructor() {
-    console.log("Inicializando PopupManager...");
     this.isLoading = false;
     this.init();
   }
 
   async init() {
-    console.log("Inicializando popup...");
-
     try {
       // Verificar que operationsProcessor esté disponible
       if (!window.operationsProcessor) {
@@ -21,28 +17,19 @@ class PopupManager {
         return;
       }
 
-      console.log("OperationsProcessor encontrado");
-
       // Cargar configuración
       await window.operationsProcessor.loadConfig();
-      console.log("Configuración cargada");
 
       // Configurar event listeners
       this.setupEventListeners();
-      console.log("Event listeners configurados");
 
       // Cargar UI
       this.loadConfigToUI();
-      console.log("UI cargada");
 
       // Verificar datos guardados con un pequeño delay para asegurar que todo esté listo
       setTimeout(async () => {
-        console.log("Iniciando verificación de datos guardados...");
         await this.checkSavedData();
-        console.log("Datos guardados verificados");
       }, 200);
-
-      console.log("Popup inicializado correctamente");
     } catch (e) {
       console.error("Error inicializando popup:", e);
       this.showError("Error inicializando la extensión: " + e.message);
@@ -106,6 +93,30 @@ class PopupManager {
       clearBtn.addEventListener("click", () => this.clearOperationsResults());
     }
 
+    // Botones de copia rápida (parte superior)
+    const quickCopyCallsBtn = document.getElementById("quickCopyCallsBtn");
+    if (quickCopyCallsBtn) {
+      quickCopyCallsBtn.addEventListener("click", () =>
+        this.copyOperationsData("calls")
+      );
+    }
+
+    const quickCopyPutsBtn = document.getElementById("quickCopyPutsBtn");
+    if (quickCopyPutsBtn) {
+      quickCopyPutsBtn.addEventListener("click", () =>
+        this.copyOperationsData("puts")
+      );
+    }
+
+    const quickCopyAccionesBtn = document.getElementById(
+      "quickCopyAccionesBtn"
+    );
+    if (quickCopyAccionesBtn) {
+      quickCopyAccionesBtn.addEventListener("click", () =>
+        this.copyOperationsData("acciones")
+      );
+    }
+
     // Botones de resultados
     const downloadAllBtn = document.getElementById("downloadAllBtn");
     if (downloadAllBtn) {
@@ -136,6 +147,20 @@ class PopupManager {
     const downloadPutsBtn = document.getElementById("downloadPutsBtn");
     if (downloadPutsBtn) {
       downloadPutsBtn.addEventListener("click", () => this.downloadPutsFile());
+    }
+
+    const copyAccionesBtn = document.getElementById("copyAccionesBtn");
+    if (copyAccionesBtn) {
+      copyAccionesBtn.addEventListener("click", () =>
+        this.copyOperationsData("acciones")
+      );
+    }
+
+    const downloadAccionesBtn = document.getElementById("downloadAccionesBtn");
+    if (downloadAccionesBtn) {
+      downloadAccionesBtn.addEventListener("click", () =>
+        this.downloadAccionesFile()
+      );
     }
 
     // Configuración avanzada
@@ -183,6 +208,8 @@ class PopupManager {
       tabName === "calls" ? "block" : "none";
     document.getElementById("previewPuts").style.display =
       tabName === "puts" ? "block" : "none";
+    document.getElementById("previewAcciones").style.display =
+      tabName === "acciones" ? "block" : "none";
   }
 
   loadConfigToUI() {
@@ -299,10 +326,33 @@ class PopupManager {
       symbols.forEach((symbol) => {
         const item = document.createElement("div");
         item.className = "config-item";
+        const subyacente =
+          window.operationsProcessor.getSubyacenteForSymbol(symbol) || "";
         item.innerHTML = `
-          <span>${symbol}</span>
-          <button onclick="popupManager.removeSymbol('${symbol}')">Eliminar</button>
+          <div style="flex: 1;">
+            <div style="font-weight: 500; margin-bottom: 4px;">${symbol}</div>
+            <div style="font-size: 12px; color: #6b7280;">
+              <div><strong>Subyacente:</strong> ${subyacente || "N/A"}</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button class="edit-symbol-btn" data-symbol="${symbol}" style="padding: 4px 8px; font-size: 11px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer;">Editar</button>
+            <button class="remove-symbol-btn" data-symbol="${symbol}" style="padding: 4px 8px; font-size: 11px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Eliminar</button>
+          </div>
         `;
+
+        // Agregar event listeners
+        const editBtn = item.querySelector(".edit-symbol-btn");
+        const removeBtn = item.querySelector(".remove-symbol-btn");
+
+        editBtn.addEventListener("click", () => {
+          this.editSymbol(editBtn.dataset.symbol);
+        });
+
+        removeBtn.addEventListener("click", () => {
+          this.removeSymbol(removeBtn.dataset.symbol);
+        });
+
         symbolsList.appendChild(item);
       });
     } catch (error) {
@@ -404,6 +454,10 @@ class PopupManager {
         this.showStatus("Operaciones procesadas exitosamente", "success");
         this.displayOperationsResults(result);
         this.showResultsSection();
+
+        // Guardar la hora de procesamiento
+        await this.saveLastProcessTime();
+
         await this.checkSavedData();
       } else {
         this.showStatus(`Error: ${result.error}`, "error");
@@ -430,15 +484,20 @@ class PopupManager {
     const summaryDiv = document.getElementById("operationsSummary");
     const callsTableBody = document.getElementById("callsTableBody");
     const putsTableBody = document.getElementById("putsTableBody");
+    const accionesTableBody = document.getElementById("accionesTableBody");
 
     if (summaryDiv) {
       const symbolText = result.symbol || "N/A";
       const expirationText = result.expiration || "N/A";
 
       // Mostrar siempre las cantidades SIN promedios
-      const totalOps = result.callsData.length + result.putsData.length;
+      const totalOps =
+        result.callsData.length +
+        result.putsData.length +
+        (result.accionesData?.length || 0);
       const callsCount = result.callsData.length;
       const putsCount = result.putsData.length;
+      const accionesCount = result.accionesData?.length || 0;
 
       // Si hay promedios, mostrar también las cantidades originales
       const hasAveraging =
@@ -447,14 +506,6 @@ class PopupManager {
         result.originalPutsCount &&
         (result.originalCallsCount !== callsCount ||
           result.originalPutsCount !== putsCount);
-
-      console.log("Display data:", {
-        useAveraging: result.useAveraging,
-        originalCallsCount: result.originalCallsCount,
-        originalPutsCount: result.originalPutsCount,
-        currentCallsCount: callsCount,
-        currentPutsCount: putsCount,
-      });
 
       let summaryHTML = `
         <div class="summary-item">
@@ -475,7 +526,9 @@ class PopupManager {
           <span class="summary-label">Total Operaciones:</span>
           <span class="summary-value">${
             hasAveraging && result.originalCallsCount
-              ? result.originalCallsCount + result.originalPutsCount
+              ? result.originalCallsCount +
+                result.originalPutsCount +
+                accionesCount
               : totalOps
           }</span>
         </div>
@@ -494,6 +547,10 @@ class PopupManager {
               ? result.originalPutsCount
               : putsCount
           }</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">ACCIONES:</span>
+          <span class="summary-value">${accionesCount}</span>
         </div>
       `;
 
@@ -566,6 +623,29 @@ class PopupManager {
         putsTableBody.appendChild(row);
       }
     }
+
+    // Llenar tabla de ACCIONES
+    if (accionesTableBody) {
+      accionesTableBody.innerHTML = "";
+      if (result.accionesData && result.accionesData.length > 0) {
+        result.accionesData.forEach((op) => {
+          const row = document.createElement("tr");
+          const cantidadClass = op.cantidad >= 0 ? "positive" : "negative";
+          const precio4 = Number(op.precio).toFixed(4);
+          row.innerHTML = `
+            <td>${op.simbolo}</td>
+            <td class="${cantidadClass}">${op.cantidad}</td>
+            <td>$${precio4}</td>
+          `;
+          accionesTableBody.appendChild(row);
+        });
+      } else {
+        const row = document.createElement("tr");
+        row.innerHTML =
+          '<td colspan="3" style="text-align: center; color: #6b7280;">No hay operaciones de acciones</td>';
+        accionesTableBody.appendChild(row);
+      }
+    }
   }
 
   showResultsSection() {
@@ -573,12 +653,78 @@ class PopupManager {
     if (resultsSection) {
       resultsSection.style.display = "block";
     }
+
+    // Mostrar también la sección de botones de copia rápida solo si hay datos
+    this.showQuickCopySection();
+  }
+
+  async showQuickCopySection() {
+    try {
+      // Verificar si hay datos procesados antes de mostrar la sección
+      const hasData = window.operationsProcessor.hasProcessedData();
+
+      if (hasData) {
+        const quickCopySection = document.getElementById("quickCopySection");
+        if (quickCopySection) {
+          quickCopySection.style.display = "block";
+        }
+      }
+    } catch (error) {
+      console.error(
+        "Error verificando datos para mostrar sección de copia:",
+        error
+      );
+    }
+  }
+
+  async saveLastProcessTime() {
+    try {
+      const now = new Date();
+      const timeString = now.toLocaleString("es-ES", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+
+      await chrome.storage.local.set({
+        lastProcessTime: timeString,
+        lastProcessTimestamp: now.getTime(),
+      });
+    } catch (error) {
+      console.error("Error guardando hora de procesamiento:", error);
+    }
+  }
+
+  async showLastReportInfo() {
+    try {
+      // Verificar si hay datos procesados antes de mostrar la información
+      const hasData = window.operationsProcessor.hasProcessedData();
+
+      if (!hasData) {
+        return; // No mostrar si no hay datos
+      }
+
+      const storageData = await chrome.storage.local.get(["lastProcessTime"]);
+
+      if (storageData.lastProcessTime) {
+        const lastReportInfo = document.getElementById("lastReportInfo");
+
+        if (lastReportInfo) {
+          lastReportInfo.innerHTML = `
+              <span style="color: #6b7280;">${storageData.lastProcessTime}</span>
+            `;
+        }
+      }
+    } catch (error) {
+      console.error("Error mostrando información del último reporte:", error);
+    }
   }
 
   async checkSavedData() {
     try {
-      console.log("Verificando datos guardados...");
-
       // Verificar que operationsProcessor esté disponible
       if (!window.operationsProcessor) {
         console.error(
@@ -590,42 +736,20 @@ class PopupManager {
       // Forzar recarga de configuración para asegurar que tenemos los datos más recientes
       await window.operationsProcessor.loadConfig();
 
-      console.log(
-        "hasProcessedData:",
-        window.operationsProcessor.hasProcessedData()
-      );
-      console.log(
-        "callsData length:",
-        window.operationsProcessor.callsData?.length || 0
-      );
-      console.log(
-        "putsData length:",
-        window.operationsProcessor.putsData?.length || 0
-      );
-      console.log(
-        "processedData length:",
-        window.operationsProcessor.processedData?.length || 0
-      );
-
       // Verificar también directamente desde el storage
       const storageData = await chrome.storage.local.get([
         "callsData",
         "putsData",
+        "accionesData",
         "processedData",
       ]);
-
-      console.log("Datos directos del storage:", {
-        callsDataLength: storageData.callsData?.length || 0,
-        putsDataLength: storageData.putsData?.length || 0,
-        processedDataLength: storageData.processedData?.length || 0,
-      });
 
       if (
         window.operationsProcessor.hasProcessedData() ||
         (storageData.callsData && storageData.callsData.length > 0) ||
-        (storageData.putsData && storageData.putsData.length > 0)
+        (storageData.putsData && storageData.putsData.length > 0) ||
+        (storageData.accionesData && storageData.accionesData.length > 0)
       ) {
-        console.log("Hay datos procesados, mostrando...");
         const report = window.operationsProcessor.generateVisualReport();
         this.displaySavedDataInfo(report);
         this.showSavedDataSection();
@@ -633,8 +757,9 @@ class PopupManager {
         // También mostrar los resultados procesados
         await this.displaySavedResults();
         this.showResultsSection();
-      } else {
-        console.log("No hay datos procesados guardados");
+
+        // Mostrar información del último reporte
+        await this.showLastReportInfo();
       }
     } catch (error) {
       console.error("Error verificando datos guardados:", error);
@@ -654,6 +779,7 @@ class PopupManager {
       const resumen = report.resumen || {};
       const calls = report.calls || {};
       const puts = report.puts || {};
+      const acciones = report.acciones || {};
 
       savedDataInfo.innerHTML = `
         <strong>Última sesión procesada:</strong><br>
@@ -661,40 +787,34 @@ class PopupManager {
         Vencimiento: ${resumen.vencimiento || "N/A"}<br>
         Modo: ${resumen.modoPromedio ? "CON PROMEDIOS" : "SIN PROMEDIOS"}<br>
         CALLS: ${calls.count || 0} operaciones<br>
-        PUTS: ${puts.count || 0} operaciones
+        PUTS: ${puts.count || 0} operaciones<br>
+        ACCIONES: ${acciones.count || 0} operaciones
       `;
     }
   }
 
   async displaySavedResults() {
     try {
-      console.log("Mostrando resultados guardados...");
-
       // Verificar directamente el storage
       const storageData = await chrome.storage.local.get([
         "callsData",
         "putsData",
+        "accionesData",
         "processedData",
         "activeSymbol",
         "expiration",
         "useAveraging",
       ]);
 
-      console.log("Datos del storage:", storageData);
-      console.log(
-        "callsData desde storage:",
-        storageData.callsData?.length || 0
-      );
-      console.log("putsData desde storage:", storageData.putsData?.length || 0);
-
       // Usar datos del storage directamente si están disponibles
       const callsData =
         storageData.callsData || window.operationsProcessor.callsData || [];
       const putsData =
         storageData.putsData || window.operationsProcessor.putsData || [];
-
-      console.log("callsData final:", callsData);
-      console.log("putsData final:", putsData);
+      const accionesData =
+        storageData.accionesData ||
+        window.operationsProcessor.accionesData ||
+        [];
 
       // Crear un objeto de resultado similar al que se genera al procesar
       const result = {
@@ -709,9 +829,8 @@ class PopupManager {
             : window.operationsProcessor.getUseAveraging(),
         callsData: callsData,
         putsData: putsData,
+        accionesData: accionesData,
       };
-
-      console.log("Resultado creado:", result);
 
       // Mostrar los resultados usando la misma función que se usa al procesar
       this.displayOperationsResults(result);
@@ -772,6 +891,17 @@ class PopupManager {
     }
   }
 
+  async downloadAccionesFile() {
+    try {
+      this.showStatus("Generando archivo ACCIONES...", "info");
+      const filename = await window.operationsProcessor.generateAccionesFile();
+      this.showStatus(`Archivo ACCIONES descargado: ${filename}`, "success");
+    } catch (error) {
+      console.error("Error descargando archivo ACCIONES:", error);
+      this.showStatus("Error generando archivo ACCIONES", "error");
+    }
+  }
+
   async clearOperationsResults() {
     if (confirm("¿Eliminar todos los datos procesados?")) {
       try {
@@ -780,6 +910,7 @@ class PopupManager {
         // Limpiar UI
         document.getElementById("resultsSection").style.display = "none";
         document.getElementById("savedDataSection").style.display = "none";
+        document.getElementById("quickCopySection").style.display = "none";
         document.getElementById("csvFileInput").value = "";
         this.enableProcessButton();
 
@@ -793,19 +924,27 @@ class PopupManager {
 
   async addSymbol() {
     const newSymbolInput = document.getElementById("newSymbolInput");
+    const newSubyacenteInput = document.getElementById("newSubyacenteInput");
     const symbol = newSymbolInput.value.trim();
+    const subyacente = newSubyacenteInput.value.trim();
 
     if (!symbol) {
       this.showStatus("Ingresa un símbolo válido", "error");
       return;
     }
 
+    if (!subyacente) {
+      this.showStatus("Ingresa el símbolo subyacente", "error");
+      return;
+    }
+
     try {
-      await window.operationsProcessor.addSymbol(symbol);
+      await window.operationsProcessor.addSymbol(symbol, subyacente);
       newSymbolInput.value = "";
+      newSubyacenteInput.value = "";
       this.loadSymbolsToSelect();
       this.loadSymbolsList();
-      this.showStatus(`Símbolo ${symbol} agregado`, "success");
+      this.showStatus(`Símbolo ${symbol} (${subyacente}) agregado`, "success");
     } catch (error) {
       console.error("Error agregando símbolo:", error);
       this.showStatus("Error agregando símbolo", "error");
@@ -1052,6 +1191,110 @@ class PopupManager {
     } catch (error) {
       console.error("Error actualizando vencimiento:", error);
       this.showStatus("Error actualizando vencimiento", "error");
+    }
+  }
+
+  editSymbol(symbol) {
+    const subyacente =
+      window.operationsProcessor.getSubyacenteForSymbol(symbol);
+
+    // Llenar los campos con los datos actuales
+    const symbolInput = document.getElementById("newSymbolInput");
+    const subyacenteInput = document.getElementById("newSubyacenteInput");
+
+    symbolInput.value = symbol;
+    subyacenteInput.value = subyacente || "";
+
+    // Indicar visualmente que se está editando
+    symbolInput.style.borderColor = "#10b981";
+    subyacenteInput.style.borderColor = "#10b981";
+
+    // Cambiar el botón a "Actualizar"
+    const addBtn = document.getElementById("addSymbolBtn");
+    addBtn.textContent = "Actualizar";
+    addBtn.style.background = "#10b981"; // Verde para indicar modo edición
+
+    // Remover todos los event listeners existentes y agregar el nuevo
+    addBtn.replaceWith(addBtn.cloneNode(true));
+    const newAddBtn = document.getElementById("addSymbolBtn");
+    newAddBtn.addEventListener("click", () => {
+      this.updateSymbol(symbol);
+    });
+
+    // Scroll hacia los campos
+    symbolInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    symbolInput.focus();
+
+    this.showStatus(
+      `✏️ Editando símbolo ${symbol} - Modifica los valores y haz clic en "Actualizar"`,
+      "info"
+    );
+  }
+
+  async updateSymbol(oldSymbol) {
+    const symbolInput = document.getElementById("newSymbolInput");
+    const subyacenteInput = document.getElementById("newSubyacenteInput");
+
+    const symbol = symbolInput.value.trim();
+    const subyacente = subyacenteInput.value.trim();
+
+    // Validaciones
+    if (!symbol) {
+      this.showStatus("Ingresa un símbolo válido", "error");
+      return;
+    }
+
+    if (!subyacente) {
+      this.showStatus("Ingresa el símbolo subyacente", "error");
+      return;
+    }
+
+    try {
+      // Si el símbolo cambió, eliminar el anterior y agregar el nuevo
+      if (oldSymbol !== symbol) {
+        await window.operationsProcessor.removeSymbol(oldSymbol);
+        await window.operationsProcessor.addSymbol(symbol, subyacente);
+      } else {
+        // Si el símbolo es el mismo, solo actualizar el subyacente
+        await window.operationsProcessor.updateSymbolSubyacente(
+          symbol,
+          subyacente
+        );
+      }
+
+      // Limpiar campos y restaurar botón
+      symbolInput.value = "";
+      subyacenteInput.value = "";
+      symbolInput.style.borderColor = ""; // Restaurar color original
+      subyacenteInput.style.borderColor = ""; // Restaurar color original
+      const addBtn = document.getElementById("addSymbolBtn");
+      addBtn.textContent = "Agregar";
+      addBtn.style.background = ""; // Restaurar color original
+
+      // Restaurar el event listener original
+      addBtn.replaceWith(addBtn.cloneNode(true));
+      const newAddBtn = document.getElementById("addSymbolBtn");
+      newAddBtn.addEventListener("click", () => {
+        this.addSymbol();
+      });
+
+      this.loadSymbolsToSelect();
+      this.loadSymbolsList();
+
+      // Forzar recarga de configuración para asegurar que los cambios se reflejen
+      await window.operationsProcessor.loadConfig();
+
+      // Verificar que el cambio se aplicó correctamente
+      const updatedSubyacente =
+        window.operationsProcessor.getSubyacenteForSymbol(symbol);
+
+      this.showStatus(
+        `✅ Símbolo ${symbol} actualizado exitosamente - Subyacente: ${updatedSubyacente}`,
+        "success"
+      );
+    } catch (error) {
+      console.error("Error actualizando símbolo:", error);
+      this.showStatus("Error actualizando símbolo", "error");
     }
   }
 }

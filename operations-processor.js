@@ -9,6 +9,7 @@ class OperationsProcessor {
     this.processedData = [];
     this.callsData = [];
     this.putsData = [];
+    this.accionesData = [];
     this.useAveraging = false;
     this.activeSymbol = "GFG";
     this.expiration = "OCT";
@@ -18,6 +19,7 @@ class OperationsProcessor {
     // Configuración dinámica
     this.availableSymbols = [];
     this.availableExpirations = {};
+    this.symbolSubyacentes = {}; // Mapeo de símbolos a sus subyacentes
   }
 
   /**
@@ -33,9 +35,11 @@ class OperationsProcessor {
         "lastProcessedTime",
         "callsData",
         "putsData",
+        "accionesData",
         "processedData",
         "availableSymbols",
         "availableExpirations",
+        "symbolSubyacentes",
       ]);
 
       this.activeSymbol = result.activeSymbol || "GFG";
@@ -47,6 +51,7 @@ class OperationsProcessor {
       // Cargar datos procesados
       this.callsData = result.callsData || [];
       this.putsData = result.putsData || [];
+      this.accionesData = result.accionesData || [];
       this.processedData = result.processedData || [];
 
       // Cargar configuración dinámica
@@ -54,19 +59,8 @@ class OperationsProcessor {
         result.availableSymbols || this.getDefaultSymbols();
       this.availableExpirations =
         result.availableExpirations || this.getDefaultExpirations();
-
-      console.log("Configuración cargada desde storage:", {
-        activeSymbol: this.activeSymbol,
-        expiration: this.expiration,
-        useAveraging: this.useAveraging,
-        hasCallsData: this.callsData.length > 0,
-        hasPutsData: this.putsData.length > 0,
-        callsDataLength: this.callsData.length,
-        putsDataLength: this.putsData.length,
-        processedDataLength: this.processedData.length,
-        symbolsCount: this.availableSymbols.length,
-        expirationsCount: Object.keys(this.availableExpirations).length,
-      });
+      this.symbolSubyacentes =
+        result.symbolSubyacentes || this.getDefaultSubyacentes();
     } catch (error) {
       console.error("Error cargando configuración:", error);
     }
@@ -85,17 +79,11 @@ class OperationsProcessor {
         lastProcessedTime: this.lastProcessedTime,
         callsData: this.callsData,
         putsData: this.putsData,
+        accionesData: this.accionesData,
         processedData: this.processedData,
         availableSymbols: this.availableSymbols,
         availableExpirations: this.availableExpirations,
-      });
-      console.log("Configuración guardada en storage:", {
-        callsDataLength: this.callsData.length,
-        putsDataLength: this.putsData.length,
-        processedDataLength: this.processedData.length,
-        activeSymbol: this.activeSymbol,
-        expiration: this.expiration,
-        useAveraging: this.useAveraging,
+        symbolSubyacentes: this.symbolSubyacentes,
       });
     } catch (error) {
       console.error("Error guardando configuración:", error);
@@ -124,17 +112,12 @@ class OperationsProcessor {
 
       // Parsear CSV
       this.originalData = this.parseCSV(csvText);
-      console.log(`Registros originales: ${this.originalData.length}`);
 
       // PRIMERO: Filtrar ejecuciones reales (fills) y excluir updates
       let filteredData = this.filterExecutionReports(this.originalData);
-      console.log(
-        `Después de filtrar execution_report (sin updates): ${filteredData.length}`
-      );
 
       // SEGUNDO: Consolidar por order_id + symbol
       let consolidatedData = this.consolidateOperations(filteredData);
-      console.log(`Órdenes consolidadas: ${consolidatedData.length}`);
 
       // Procesar símbolos y clasificar opciones
       this.processedData = this.processSymbolsAndClassify(consolidatedData);
@@ -145,29 +128,20 @@ class OperationsProcessor {
         );
       }
 
-      // Separar CALLS y PUTS
+      // Separar CALLS, PUTS y ACCIONES
       this.callsData = this.processedData.filter((op) => op.F === "CALL");
       this.putsData = this.processedData.filter((op) => op.F === "PUT");
+      this.accionesData = this.processedData.filter((op) => op.F === "ACCION");
 
       // Guardar cantidades originales antes de aplicar promedios
       const originalCallsCount = this.callsData.length;
       const originalPutsCount = this.putsData.length;
 
-      console.log("Cantidades originales:", {
-        calls: originalCallsCount,
-        puts: originalPutsCount,
-        useAveraging: this.useAveraging,
-      });
-
       // Procesar según el modo seleccionado
       if (this.useAveraging) {
         this.callsData = this.processAveraging(this.callsData);
         this.putsData = this.processAveraging(this.putsData);
-
-        console.log("Después de promedios:", {
-          calls: this.callsData.length,
-          puts: this.putsData.length,
-        });
+        this.accionesData = this.processAveragingAcciones(this.accionesData);
       } else {
         // Limpiar datos finales (remover columna F)
         this.callsData = this.callsData.map((op) => ({
@@ -181,11 +155,18 @@ class OperationsProcessor {
           base: op.base,
           precio: op.precio,
         }));
+
+        this.accionesData = this.accionesData.map((op) => ({
+          cantidad: op.cantidad,
+          simbolo: op.simbolo,
+          precio: op.precio,
+        }));
       }
 
       // Sanitizar y remover operaciones inválidas o neutras (cantidad 0 o precio inválido)
       this.callsData = this.sanitizeOperations(this.callsData);
       this.putsData = this.sanitizeOperations(this.putsData);
+      this.accionesData = this.sanitizeOperationsAcciones(this.accionesData);
 
       // Guardar datos procesados y metadatos
       this.lastProcessedFile = new Date().toISOString();
@@ -197,10 +178,12 @@ class OperationsProcessor {
         totalOperations: this.processedData.length,
         callsCount: this.callsData.length,
         putsCount: this.putsData.length,
+        accionesCount: this.accionesData.length,
         originalCallsCount: originalCallsCount,
         originalPutsCount: originalPutsCount,
         callsData: this.callsData,
         putsData: this.putsData,
+        accionesData: this.accionesData,
         lastProcessedTime: this.lastProcessedTime,
         symbol: this.activeSymbol,
         expiration: this.expiration,
@@ -338,13 +321,9 @@ class OperationsProcessor {
     const processed = [];
 
     data.forEach((row) => {
-      // Determinar si es PUT o CALL
-      const putCall = this.determinePutCall(row.symbol);
-      if (!putCall) return;
-
-      // Extraer y modificar símbolo
-      const modifiedSymbol = this.extractAndModifySymbol(row.symbol);
-      if (modifiedSymbol === null) return;
+      // Determinar si es PUT, CALL o ACCION
+      const putCallAccion = this.determinePutCallAccion(row.symbol);
+      if (!putCallAccion) return;
 
       // Calcular cantidad (negativo para ventas)
       const cantidad =
@@ -354,42 +333,68 @@ class OperationsProcessor {
 
       const precio = parseFloat(row.last_price);
 
-      // Descartar operaciones con cantidad 0, precio inválido o base inválida
-      if (
-        cantidad === 0 ||
-        !isFinite(precio) ||
-        isNaN(precio) ||
-        !isFinite(modifiedSymbol) ||
-        modifiedSymbol === 0
-      ) {
+      // Descartar operaciones con cantidad 0 o precio inválido
+      if (cantidad === 0 || !isFinite(precio) || isNaN(precio)) {
         return;
       }
 
-      processed.push({
-        cantidad: cantidad,
-        base: modifiedSymbol,
-        precio: precio,
-        F: putCall,
-      });
+      if (putCallAccion === "ACCION") {
+        // Para acciones, extraer el símbolo del formato MERV - XMEV - GGAL - 24hs
+        const parts = row.symbol.split(" - ");
+        if (parts.length >= 3) {
+          const simboloAccion = parts[2]; // GGAL
+          processed.push({
+            cantidad: cantidad,
+            simbolo: simboloAccion,
+            precio: precio,
+            F: "ACCION",
+          });
+        }
+      } else {
+        // Para opciones, extraer y modificar símbolo
+        const modifiedSymbol = this.extractAndModifySymbol(row.symbol);
+        if (modifiedSymbol === null) return;
+
+        // Descartar operaciones con base inválida
+        if (!isFinite(modifiedSymbol) || modifiedSymbol === 0) {
+          return;
+        }
+
+        processed.push({
+          cantidad: cantidad,
+          base: modifiedSymbol,
+          precio: precio,
+          F: putCallAccion,
+        });
+      }
     });
 
     return processed;
   }
 
   /**
-   * Determina si un símbolo es PUT o CALL
+   * Determina si un símbolo es PUT, CALL o ACCION
    * @param {string} symbol - Símbolo original
-   * @returns {string} 'PUT', 'CALL' o ''
+   * @returns {string} 'PUT', 'CALL', 'ACCION' o ''
    */
-  determinePutCall(symbol) {
+  determinePutCallAccion(symbol) {
     const putPattern = `${this.activeSymbol}V`; // Ej: GFGV, YPFV, COMV
     const callPattern = `${this.activeSymbol}C`; // Ej: GFGC, YPFC, COMC
+    const subyacente = this.getSubyacenteForSymbol(this.activeSymbol);
 
+    // Primero verificar si es una opción (PUT o CALL)
     if (symbol.includes(putPattern)) {
       return "PUT";
     } else if (symbol.includes(callPattern)) {
       return "CALL";
     }
+
+    // Si no es opción, verificar si es acción del subyacente
+    // Las acciones tienen formato: MERV - XMEV - GGAL - 24hs
+    if (subyacente && symbol.includes(` - ${subyacente} - `)) {
+      return "ACCION";
+    }
+
     return "";
   }
 
@@ -546,6 +551,105 @@ class OperationsProcessor {
   }
 
   /**
+   * Procesa operaciones de acciones aplicando promedios por símbolo separando compras y ventas
+   * @param {Array} operations - Array de operaciones de acciones sin procesar
+   * @returns {Array} Array de operaciones procesadas con promedios
+   */
+  processAveragingAcciones(operations) {
+    if (!operations || operations.length === 0) {
+      return [];
+    }
+
+    // Agrupar por símbolo
+    const symbolGroups = {};
+
+    operations.forEach((op) => {
+      // Ignorar entradas inválidas desde el inicio
+      if (
+        !op ||
+        op.cantidad === 0 ||
+        !op.simbolo ||
+        !isFinite(op.precio) ||
+        isNaN(op.precio)
+      ) {
+        return;
+      }
+      const simbolo = op.simbolo;
+      if (!symbolGroups[simbolo]) {
+        symbolGroups[simbolo] = {
+          compras: [],
+          ventas: [],
+        };
+      }
+
+      if (op.cantidad > 0) {
+        symbolGroups[simbolo].compras.push(op);
+      } else {
+        symbolGroups[simbolo].ventas.push(op);
+      }
+    });
+
+    const processedOperations = [];
+
+    // Procesar cada símbolo
+    Object.keys(symbolGroups).forEach((simbolo) => {
+      const group = symbolGroups[simbolo];
+
+      // Procesar ventas (cantidades negativas)
+      if (group.ventas.length > 0) {
+        const totalCantidadVentas = group.ventas.reduce(
+          (sum, op) => sum + Math.abs(op.cantidad),
+          0
+        );
+        if (totalCantidadVentas > 0) {
+          const precioPromedioVentas =
+            group.ventas.reduce((sum, op) => {
+              return sum + op.precio * Math.abs(op.cantidad);
+            }, 0) / totalCantidadVentas;
+
+          if (isFinite(precioPromedioVentas)) {
+            processedOperations.push({
+              cantidad: -totalCantidadVentas, // Negativo para ventas
+              simbolo: simbolo,
+              precio: Math.round(precioPromedioVentas * 10000) / 10000,
+            });
+          }
+        }
+      }
+
+      // Procesar compras (cantidades positivas)
+      if (group.compras.length > 0) {
+        const totalCantidadCompras = group.compras.reduce(
+          (sum, op) => sum + op.cantidad,
+          0
+        );
+        if (totalCantidadCompras > 0) {
+          const precioPromedioCompras =
+            group.compras.reduce((sum, op) => {
+              return sum + op.precio * op.cantidad;
+            }, 0) / totalCantidadCompras;
+
+          if (isFinite(precioPromedioCompras)) {
+            processedOperations.push({
+              cantidad: totalCantidadCompras,
+              simbolo: simbolo,
+              precio: Math.round(precioPromedioCompras * 10000) / 10000,
+            });
+          }
+        }
+      }
+    });
+
+    // Ordenar por símbolo y luego por cantidad (ventas primero, compras después)
+    return processedOperations.sort((a, b) => {
+      if (a.simbolo === b.simbolo) {
+        return a.cantidad - b.cantidad; // Ventas (negativas) primero
+      }
+      return a.simbolo.localeCompare(b.simbolo); // Por símbolo alfabético
+    });
+  }
+
+  /**
    * Sanitiza operaciones: remueve inválidas y normaliza números
    * @param {Array} operations
    * @returns {Array}
@@ -574,27 +678,57 @@ class OperationsProcessor {
   }
 
   /**
+   * Sanitiza operaciones de acciones: remueve inválidas y normaliza números
+   * @param {Array} operations
+   * @returns {Array}
+   */
+  sanitizeOperationsAcciones(operations) {
+    if (!Array.isArray(operations)) return [];
+    return operations
+      .filter((op) => {
+        return (
+          op &&
+          typeof op.cantidad === "number" &&
+          op.cantidad !== 0 &&
+          typeof op.simbolo === "string" &&
+          op.simbolo &&
+          typeof op.precio === "number" &&
+          isFinite(op.precio) &&
+          !isNaN(op.precio)
+        );
+      })
+      .map((op) => ({
+        cantidad: op.cantidad,
+        simbolo: op.simbolo,
+        precio: Math.round(op.precio * 10000) / 10000,
+      }));
+  }
+
+  /**
    * Genera un reporte visual para mostrar en el popup
    * @returns {Object} Objeto con el reporte visual
    */
   generateVisualReport() {
-    if (!this.callsData || !this.putsData) {
+    if (!this.callsData || !this.putsData || !this.accionesData) {
       return { error: "No hay datos procesados" };
     }
 
     const totalCalls = this.callsData.length;
     const totalPuts = this.putsData.length;
-    const totalOperations = totalCalls + totalPuts;
+    const totalAcciones = this.accionesData.length;
+    const totalOperations = totalCalls + totalPuts + totalAcciones;
 
     // Calcular estadísticas
     const callsStats = this.calculateStats(this.callsData);
     const putsStats = this.calculateStats(this.putsData);
+    const accionesStats = this.calculateStatsAcciones(this.accionesData);
 
     return {
       resumen: {
         totalOperaciones: totalOperations,
         totalCalls: totalCalls,
         totalPuts: totalPuts,
+        totalAcciones: totalAcciones,
         modoPromedio: this.useAveraging,
         simboloActivo: this.activeSymbol,
         vencimiento: this.expiration,
@@ -610,6 +744,11 @@ class OperationsProcessor {
         stats: putsStats,
         operations: this.putsData.slice(0, 5), // Mostrar solo las primeras 5
       },
+      acciones: {
+        count: totalAcciones,
+        stats: accionesStats,
+        operations: this.accionesData.slice(0, 5), // Mostrar solo las primeras 5
+      },
     };
   }
 
@@ -620,6 +759,31 @@ class OperationsProcessor {
    */
   calculateStats(operations) {
     if (operations.length === 0) {
+      return { cantidadTotal: 0, precioPromedio: 0, valorTotal: 0 };
+    }
+
+    const cantidadTotal = operations.reduce((sum, op) => sum + op.cantidad, 0);
+    const valorTotal = operations.reduce(
+      (sum, op) => sum + op.cantidad * op.precio,
+      0
+    );
+    const precioPromedio =
+      operations.reduce((sum, op) => sum + op.precio, 0) / operations.length;
+
+    return {
+      cantidadTotal: Math.round(cantidadTotal * 100) / 100,
+      precioPromedio: Math.round(precioPromedio * 10000) / 10000,
+      valorTotal: Math.round(valorTotal * 10000) / 10000,
+    };
+  }
+
+  /**
+   * Calcula estadísticas básicas de un conjunto de operaciones de acciones
+   * @param {Array} operations - Array de operaciones de acciones
+   * @returns {Object} Estadísticas calculadas
+   */
+  calculateStatsAcciones(operations) {
+    if (!operations || operations.length === 0) {
       return { cantidadTotal: 0, precioPromedio: 0, valorTotal: 0 };
     }
 
@@ -673,6 +837,17 @@ class OperationsProcessor {
           const precio = op.precio.toString().replace(".", ",");
           data.push(`${cantidad}\t${base}\t${precio}`);
         });
+        data.push("");
+      }
+
+      if (this.accionesData.length > 0) {
+        data.push(`OPERACIONES ACCIONES${modeText}`);
+        data.push("Símbolo\tCantidad\tPrecio");
+        this.accionesData.forEach((op) => {
+          const cantidad = op.cantidad.toString().replace(".", ",");
+          const precio = Number(op.precio).toFixed(4).replace(".", ",");
+          data.push(`${op.simbolo}\t${cantidad}\t${precio}`);
+        });
       }
     } else if (type === "calls") {
       // Para "calls" solo los datos, sin encabezados
@@ -689,6 +864,13 @@ class OperationsProcessor {
         const base = op.base.toString().replace(".", ",");
         const precio = Number(op.precio).toFixed(4).replace(".", ",");
         data.push(`${cantidad}\t${base}\t${precio}`);
+      });
+    } else if (type === "acciones") {
+      // Para "acciones" solo los datos, sin encabezados
+      this.accionesData.forEach((op) => {
+        const cantidad = op.cantidad.toString().replace(".", ",");
+        const precio = Number(op.precio).toFixed(4).replace(".", ",");
+        data.push(`${cantidad}\t${precio}`);
       });
     }
 
@@ -734,6 +916,17 @@ class OperationsProcessor {
       const base = op.base.toString().replace(".", ",");
       const precio = Number(op.precio).toFixed(4).replace(".", ",");
       csvContent += `${cantidad};${base};${precio}\n`;
+    });
+
+    csvContent += "\n";
+
+    // Hoja ACCIONES
+    csvContent += `OPERACIONES ACCIONES${modeText}\n`;
+    csvContent += "Símbolo;Cantidad;Precio\n";
+    this.accionesData.forEach((op) => {
+      const cantidad = op.cantidad.toString().replace(".", ",");
+      const precio = Number(op.precio).toFixed(4).replace(".", ",");
+      csvContent += `${op.simbolo};${cantidad};${precio}\n`;
     });
 
     // Crear y descargar archivo
@@ -879,13 +1072,35 @@ class OperationsProcessor {
   }
 
   /**
+   * Obtiene la configuración por defecto de subyacentes
+   * @returns {Object} Objeto con configuración por defecto de subyacentes
+   */
+  getDefaultSubyacentes() {
+    return {
+      GFG: "GGAL",
+      YPF: "YPFD",
+      COM: "COME",
+      PAM: "PAMP",
+      TEN: "TECO2",
+      REP: "REP",
+      TGNO4: "TGNO4",
+      ALUA: "ALUA",
+      BYMA: "BYMA",
+      MIRG: "MIRG",
+    };
+  }
+
+  /**
    * Agrega un nuevo símbolo a la configuración
    * @param {string} symbol - Símbolo a agregar
+   * @param {string} subyacente - Símbolo subyacente
    */
-  async addSymbol(symbol) {
+  async addSymbol(symbol, subyacente) {
     const trimmedSymbol = symbol.trim().toUpperCase();
+    const trimmedSubyacente = subyacente.trim().toUpperCase();
     if (trimmedSymbol && !this.availableSymbols.includes(trimmedSymbol)) {
       this.availableSymbols.push(trimmedSymbol);
+      this.symbolSubyacentes[trimmedSymbol] = trimmedSubyacente;
       await this.saveConfig();
     }
   }
@@ -898,6 +1113,8 @@ class OperationsProcessor {
     const index = this.availableSymbols.indexOf(symbol);
     if (index > -1) {
       this.availableSymbols.splice(index, 1);
+      // Eliminar también el subyacente
+      delete this.symbolSubyacentes[symbol];
       // Si el símbolo eliminado era el activo, cambiar al primero disponible
       if (this.activeSymbol === symbol && this.availableSymbols.length > 0) {
         this.activeSymbol = this.availableSymbols[0];
@@ -977,6 +1194,7 @@ class OperationsProcessor {
   async resetToDefaults() {
     this.availableSymbols = this.getDefaultSymbols();
     this.availableExpirations = this.getDefaultExpirations();
+    this.symbolSubyacentes = this.getDefaultSubyacentes();
     this.activeSymbol = "GFG";
     this.expiration = "OCT";
     await this.saveConfig();
@@ -1039,6 +1257,7 @@ class OperationsProcessor {
   async clearProcessedData() {
     this.callsData = [];
     this.putsData = [];
+    this.accionesData = [];
     this.processedData = [];
     this.lastProcessedFile = null;
     this.lastProcessedTime = null;
@@ -1050,7 +1269,66 @@ class OperationsProcessor {
    * @returns {boolean} Si hay datos procesados
    */
   hasProcessedData() {
-    return this.callsData.length > 0 || this.putsData.length > 0;
+    return (
+      this.callsData.length > 0 ||
+      this.putsData.length > 0 ||
+      this.accionesData.length > 0
+    );
+  }
+
+  /**
+   * Obtiene el subyacente para un símbolo
+   * @param {string} symbol - Símbolo del activo
+   * @returns {string} Símbolo subyacente
+   */
+  getSubyacenteForSymbol(symbol) {
+    return this.symbolSubyacentes[symbol] || "";
+  }
+
+  /**
+   * Actualiza el subyacente de un símbolo
+   * @param {string} symbol - Símbolo del activo
+   * @param {string} subyacente - Nuevo símbolo subyacente
+   */
+  async updateSymbolSubyacente(symbol, subyacente) {
+    const trimmedSubyacente = subyacente.trim().toUpperCase();
+    this.symbolSubyacentes[symbol] = trimmedSubyacente;
+    await this.saveConfig();
+  }
+
+  /**
+   * Genera y descarga un archivo CSV solo para ACCIONES
+   * @returns {Promise} Promise que resuelve cuando se completa la descarga
+   */
+  async generateAccionesFile() {
+    const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const modePrefix = this.useAveraging ? "Promediadas_" : "";
+    const filename = `ACCIONES_${modePrefix}${this.activeSymbol}_${fecha}.csv`;
+
+    let csvContent = "";
+    const modeText = this.useAveraging
+      ? " (CON PROMEDIOS)"
+      : " (SIN PROMEDIOS)";
+
+    csvContent += `OPERACIONES ACCIONES${modeText}\n`;
+    csvContent += "Símbolo;Cantidad;Precio\n";
+    this.accionesData.forEach((op) => {
+      const cantidad = op.cantidad.toString().replace(".", ",");
+      const precio = Number(op.precio).toFixed(4).replace(".", ",");
+      csvContent += `${op.simbolo};${cantidad};${precio}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset-utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    return filename;
   }
 }
 

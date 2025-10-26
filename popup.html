@@ -395,6 +395,30 @@
             width: 16px;
             height: 16px;
         }
+
+        /* Estilos para los nuevos elementos */
+        #quickCopySection {
+            background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+            border: 1px solid #d8b4fe;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+        }
+
+        #quickCopySection h3 {
+            color: #8b5cf6;
+            margin-bottom: 0;
+            font-size: 13px;
+        }
+
+        #quickCopySection .btn {
+            background: #8b5cf6;
+            font-size: 11px;
+            padding: 5px 8px;
+        }
+
+        #quickCopySection .btn:hover {
+            background: #7c3aed;
+        }
     </style>
 </head>
 <body>
@@ -411,6 +435,7 @@
 
         <!-- Pestaña Procesador -->
         <div id="processorTab" class="tab-content active">
+ 
             <!-- Configuración -->
             <div class="section">
                 <h3>Configuración de Procesamiento</h3>
@@ -436,7 +461,23 @@
                         </label>
                     </div>
                 </div>
-                
+                           <!-- Botones de copia rápida -->
+            <div class="section" id="quickCopySection" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3>Copiar Datos</h3>
+                    <div id="lastReportInfo" style="font-size: 11px; color: #6b7280; font-family: 'Courier New', monospace;">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button id="quickCopyCallsBtn" class="btn">Calls</button>
+                    <button id="quickCopyPutsBtn" class="btn">Puts</button>
+                    <button id="quickCopyAccionesBtn" class="btn">Acciones</button>
+                </div>
+            </div>
+
+     
+
             
                        </div>
                         <div style="margin-top: 20px; margin-bottom: 20px; padding: 12px; background: rgba(139, 92, 246, 0.08); border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.15);">
@@ -491,15 +532,21 @@
                     <div class="preview-tabs">
                         <button class="preview-tab-btn active" data-tab="calls">CALLS</button>
                         <button class="preview-tab-btn" data-tab="puts">PUTS</button>
+                        <button class="preview-tab-btn" data-tab="acciones">ACCIONES</button>
                     </div>
 
                     <div style="display: flex; gap: 8px; margin-bottom: 16px;">
                         <button id="copyCallsBtn" class="btn btn-small">Copiar Calls</button>
                         <button id="copyPutsBtn" class="btn btn-small">Copiar Puts</button>
-                        <button id="downloadCallsBtn" class="btn btn-small">Descargar</button>
-                        <button id="downloadPutsBtn" class="btn btn-small">Descargar</button>
+                        <button id="copyAccionesBtn" class="btn btn-small">Copiar Acciones</button>
                     </div>
 
+<!--                     <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <button id="downloadCallsBtn" class="btn btn-small">Descargar Calls</button>
+                        <button id="downloadPutsBtn" class="btn btn-small">Descargar Puts</button>
+                        <button id="downloadAccionesBtn" class="btn btn-small">Descargar Acciones</button>
+                    </div>
+ -->
                     <div id="previewCalls" class="preview-content" style="display: block;">
                         <table class="data-table" id="callsTable">
                             <thead>
@@ -528,6 +575,20 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="previewAcciones" class="preview-content" style="display: none;">
+                        <table class="data-table" id="accionesTable">
+                            <thead>
+                                <tr>
+                                    <th>Símbolo</th>
+                                    <th>Cantidad</th>
+                                    <th>Precio</th>
+                                </tr>
+                            </thead>
+                            <tbody id="accionesTableBody">
+                                <!-- Se llenará dinámicamente -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -548,7 +609,10 @@
                     <h4>Símbolos de Activos</h4>
                     <div class="form-row">
                         <div>
-                            <input type="text" id="newSymbolInput" class="input" placeholder="Nuevo símbolo (ej: GGAL)">
+                            <input type="text" id="newSymbolInput" class="input" placeholder="Nuevo símbolo (ej: GFG)">
+                        </div>
+                        <div>
+                            <input type="text" id="newSubyacenteInput" class="input" placeholder="Subyacente (ej: GGAL)">
                         </div>
                         <div style="flex: 0 0 auto;">
                             <button id="addSymbolBtn" class="btn btn-small">Agregar</button>
