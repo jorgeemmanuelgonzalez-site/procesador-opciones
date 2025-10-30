@@ -23,6 +23,40 @@ class OperationsProcessor {
   }
 
   /**
+   * Extrae el strike desde un ticker genérico [EMPRESA][TIPO][STRIKE][VENCIMIENTO]
+   * @param {string} ticker - Ej: GFGC10200D, PAMPC7400DI, YPFC67131D
+   * @returns {number|null} Strike como número o null si no matchea
+   */
+  extractStrikePrice(ticker) {
+    if (typeof ticker !== "string" || ticker.length < 6) return null;
+
+    // 1) Intentar vencimiento de 2 letras
+    let match = ticker.match(/^([A-Z]+?)(\d+)([A-Z]{2})$/);
+    if (match) {
+      const digits = match[2];
+      // Por requerimiento: con 2 letras se esperan strikes redondos
+      return parseFloat(digits + ".00");
+    }
+
+    // 2) Intentar vencimiento de 1 letra
+    match = ticker.match(/^([A-Z]+?)(\d+)([A-Z])$/);
+    if (match) {
+      const digits = match[2];
+      if (digits.endsWith("00")) {
+        return parseFloat(digits + ".00");
+      }
+      if (digits.length === 5) {
+        return parseFloat(digits.substring(0, 4) + "." + digits.substring(4));
+      }
+      if (digits.length === 4) {
+        return parseFloat(digits.substring(0, 2) + "." + digits.substring(2));
+      }
+      return parseFloat(digits);
+    }
+
+    return null;
+  }
+  /**
    * Carga la configuración desde chrome.storage
    */
   async loadConfig() {
@@ -439,12 +473,27 @@ class OperationsProcessor {
     }
 
     try {
-      // Si tiene más de 4 dígitos, el 5to es decimal
-      if (relevantPart.length > 4) {
-        // Insertar punto decimal antes del último dígito
-        relevantPart = relevantPart.slice(0, -1) + "." + relevantPart.slice(-1);
+      // Aplicar reglas de strike: 4 o 5 dígitos
+      const digits = relevantPart.replace(/[^0-9]/g, "");
+      if (!digits) return null;
+
+      if (digits.endsWith("00")) {
+        // Strikes redondos: todo el entero + .00
+        return parseFloat(digits + ".00");
       }
-      return parseFloat(relevantPart);
+
+      if (digits.length === 5) {
+        // Insertar punto antes del último dígito
+        return parseFloat(digits.substring(0, 4) + "." + digits.substring(4));
+      }
+
+      if (digits.length === 4) {
+        // Insertar punto antes de los últimos 2 dígitos
+        return parseFloat(digits.substring(0, 2) + "." + digits.substring(2));
+      }
+
+      // Si no coincide con 4 o 5 dígitos, intentar parsear directo
+      return parseFloat(digits);
     } catch (error) {
       return null;
     }

@@ -2,6 +2,12 @@
 
 Todas las modificaciones notables de este proyecto se documentarán en este archivo.
 
+## [1.0.4] - 2025-10-30
+
+### Fixes
+
+- Corrección de extracción de strike price para tickers de opciones: ahora los strikes de 5 dígitos que terminan en `00` (p. ej. `10200`, `11000`, `10600`, `11400`) se interpretan correctamente como valores redondos (`10200.00`, `11000.00`, etc.). Para strikes con decimales, se inserta el punto según la longitud: en 5 dígitos antes del último dígito y en 4 dígitos antes de los últimos dos. Se agregó la función `extractStrikePrice(ticker)` genérica y una función de pruebas `testStrikePriceExtraction()`.
+
 ## [1.0.3] - 2025-01-27
 
 ### Nuevas funcionalidades
