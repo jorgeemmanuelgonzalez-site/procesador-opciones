@@ -30,6 +30,11 @@ class PopupManager {
       setTimeout(async () => {
         await this.checkSavedData();
       }, 200);
+
+      // Inicializar Google Sheets si está disponible
+      if (window.googleSheetsIntegration) {
+        await this.initGoogleSheets();
+      }
     } catch (e) {
       console.error("Error inicializando popup:", e);
       this.showError("Error inicializando la extensión: " + e.message);
@@ -182,6 +187,51 @@ class PopupManager {
     const saveConfigBtn = document.getElementById("saveConfigBtn");
     if (saveConfigBtn) {
       saveConfigBtn.addEventListener("click", () => this.saveConfiguration());
+    }
+
+    // Google Sheets listeners
+    const googleAuthBtn = document.getElementById("googleAuthBtn");
+    if (googleAuthBtn) {
+      googleAuthBtn.addEventListener("click", () => this.connectGoogle());
+    }
+
+    const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
+    if (googleDisconnectBtn) {
+      googleDisconnectBtn.addEventListener("click", () =>
+        this.disconnectGoogle()
+      );
+    }
+
+    const refreshSpreadsheetsBtn = document.getElementById(
+      "refreshSpreadsheetsBtn"
+    );
+    if (refreshSpreadsheetsBtn) {
+      refreshSpreadsheetsBtn.addEventListener("click", () =>
+        this.loadSpreadsheets()
+      );
+    }
+
+    const googleSpreadsheetSelect = document.getElementById(
+      "googleSpreadsheetSelect"
+    );
+    if (googleSpreadsheetSelect) {
+      googleSpreadsheetSelect.addEventListener("change", (e) => {
+        this.loadSheets(e.target.value);
+      });
+    }
+
+    const saveGoogleConfigBtn = document.getElementById("saveGoogleConfigBtn");
+    if (saveGoogleConfigBtn) {
+      saveGoogleConfigBtn.addEventListener("click", () =>
+        this.saveGoogleConfig()
+      );
+    }
+
+    const syncToSheetsBtn = document.getElementById("syncToSheetsBtn");
+    if (syncToSheetsBtn) {
+      syncToSheetsBtn.addEventListener("click", () =>
+        this.syncToGoogleSheets()
+      );
     }
   }
 
@@ -1295,6 +1345,281 @@ class PopupManager {
     } catch (error) {
       console.error("Error actualizando símbolo:", error);
       this.showStatus("Error actualizando símbolo", "error");
+    }
+  }
+
+  // ========== Métodos Google Sheets ==========
+
+  async initGoogleSheets() {
+    try {
+      const result = await window.googleSheetsIntegration.init();
+      this.updateGoogleSheetsUI(result);
+
+      // Si está autenticado, cargar configuración y spreadsheets
+      if (result.isAuthenticated) {
+        await this.loadConfigToGoogleSheetsUI(result.config);
+        await this.loadSpreadsheets();
+      }
+    } catch (error) {
+      console.error("Error inicializando Google Sheets:", error);
+      this.showGoogleSheetsStatus("Error inicializando Google Sheets", "error");
+    }
+  }
+
+  async connectGoogle() {
+    try {
+      this.showGoogleSheetsStatus("Conectando con Google...", "info");
+      await window.googleSheetsIntegration.authenticate();
+      this.showGoogleSheetsStatus("✅ Conectado exitosamente", "success");
+
+      const result = await window.googleSheetsIntegration.init();
+      this.updateGoogleSheetsUI(result);
+      await this.loadSpreadsheets();
+    } catch (error) {
+      console.error("Error conectando con Google:", error);
+      this.showGoogleSheetsStatus(`Error: ${error.message}`, "error");
+    }
+  }
+
+  async disconnectGoogle() {
+    if (confirm("¿Desconectar de Google Sheets?")) {
+      try {
+        await window.googleSheetsIntegration.signOut();
+        this.showGoogleSheetsStatus("Desconectado", "info");
+        this.updateGoogleSheetsUI({ isAuthenticated: false, config: null });
+      } catch (error) {
+        console.error("Error desconectando:", error);
+        this.showGoogleSheetsStatus(`Error: ${error.message}`, "error");
+      }
+    }
+  }
+
+  async loadSpreadsheets() {
+    try {
+      const spreadsheets =
+        await window.googleSheetsIntegration.getSpreadsheets();
+      const select = document.getElementById("googleSpreadsheetSelect");
+
+      select.innerHTML =
+        "<option value=''>Selecciona un spreadsheet...</option>";
+      spreadsheets.forEach((spreadsheet) => {
+        const option = document.createElement("option");
+        option.value = spreadsheet.id;
+        option.textContent = spreadsheet.name;
+        select.appendChild(option);
+      });
+
+      // Cargar configuración guardada
+      const config = await window.googleSheetsIntegration.getConfig();
+      if (config && config.spreadsheetId) {
+        select.value = config.spreadsheetId;
+        await this.loadSheets(config.spreadsheetId);
+      }
+    } catch (error) {
+      console.error("Error cargando spreadsheets:", error);
+      this.showGoogleSheetsStatus(`Error: ${error.message}`, "error");
+    }
+  }
+
+  async loadSheets(spreadsheetId) {
+    if (!spreadsheetId) return;
+
+    try {
+      const sheets = await window.googleSheetsIntegration.getSheets(
+        spreadsheetId
+      );
+      const select = document.getElementById("googleSheetSelect");
+
+      select.innerHTML = "<option value=''>Selecciona una hoja...</option>";
+      sheets.forEach((sheet) => {
+        const option = document.createElement("option");
+        option.value = sheet.title;
+        option.textContent = sheet.title;
+        select.appendChild(option);
+      });
+
+      // Cargar configuración guardada
+      const config = await window.googleSheetsIntegration.getConfig();
+      if (config && config.sheetName) {
+        select.value = config.sheetName;
+      }
+    } catch (error) {
+      console.error("Error cargando sheets:", error);
+      this.showGoogleSheetsStatus(`Error: ${error.message}`, "error");
+    }
+  }
+
+  async loadConfigToGoogleSheetsUI(config) {
+    if (!config) return;
+
+    const spreadsheetSelect = document.getElementById(
+      "googleSpreadsheetSelect"
+    );
+    const sheetSelect = document.getElementById("googleSheetSelect");
+    const startRowInput = document.getElementById("googleStartRow");
+    const columnFechaInput = document.getElementById("columnFecha");
+    const columnTipoInput = document.getElementById("columnTipo");
+    const columnCantidadInput = document.getElementById("columnCantidad");
+    const columnBasePrecioInput = document.getElementById("columnBasePrecio");
+    const columnPrimaInput = document.getElementById("columnPrima");
+
+    if (spreadsheetSelect && config.spreadsheetId) {
+      spreadsheetSelect.value = config.spreadsheetId;
+    }
+
+    if (sheetSelect && config.sheetName) {
+      sheetSelect.value = config.sheetName;
+    }
+
+    if (startRowInput && config.startRow) {
+      startRowInput.value = config.startRow;
+    }
+
+    if (config.columnMapping) {
+      if (columnFechaInput && config.columnMapping.fecha) {
+        columnFechaInput.value = config.columnMapping.fecha.toUpperCase();
+      }
+      if (columnTipoInput && config.columnMapping.tipo) {
+        columnTipoInput.value = config.columnMapping.tipo.toUpperCase();
+      }
+      if (columnCantidadInput && config.columnMapping.cantidad) {
+        columnCantidadInput.value = config.columnMapping.cantidad.toUpperCase();
+      }
+      if (columnBasePrecioInput && config.columnMapping.basePrecio) {
+        columnBasePrecioInput.value =
+          config.columnMapping.basePrecio.toUpperCase();
+      }
+      if (columnPrimaInput && config.columnMapping.prima) {
+        columnPrimaInput.value = config.columnMapping.prima.toUpperCase();
+      }
+    }
+  }
+
+  async saveGoogleConfig() {
+    const spreadsheetId = document.getElementById(
+      "googleSpreadsheetSelect"
+    ).value;
+    const sheetName = document.getElementById("googleSheetSelect").value;
+    const startRow = parseInt(document.getElementById("googleStartRow").value);
+    const columnFecha = document
+      .getElementById("columnFecha")
+      .value.trim()
+      .toUpperCase();
+    const columnTipo = document
+      .getElementById("columnTipo")
+      .value.trim()
+      .toUpperCase();
+    const columnCantidad = document
+      .getElementById("columnCantidad")
+      .value.trim()
+      .toUpperCase();
+    const columnBasePrecio = document
+      .getElementById("columnBasePrecio")
+      .value.trim()
+      .toUpperCase();
+    const columnPrima = document
+      .getElementById("columnPrima")
+      .value.trim()
+      .toUpperCase();
+
+    // Validaciones
+    if (!spreadsheetId || !sheetName) {
+      this.showGoogleSheetsStatus("Selecciona spreadsheet y hoja", "error");
+      return;
+    }
+
+    if (!startRow || startRow < 1) {
+      this.showGoogleSheetsStatus(
+        "Ingresa una fila de inicio válida (mayor a 0)",
+        "error"
+      );
+      return;
+    }
+
+    if (!columnFecha || !columnTipo || !columnCantidad || !columnBasePrecio) {
+      this.showGoogleSheetsStatus(
+        "Completa todas las columnas requeridas (FECHA, TIPO, CANTIDAD, BASE/PRECIO)",
+        "error"
+      );
+      return;
+    }
+
+    // Validar formato de columnas (solo letras A-Z)
+    const columnRegex = /^[A-Z]+$/;
+    const columns = [columnFecha, columnTipo, columnCantidad, columnBasePrecio];
+    if (columnPrima) columns.push(columnPrima);
+
+    for (const col of columns) {
+      if (col && !columnRegex.test(col)) {
+        this.showGoogleSheetsStatus(
+          `Columna inválida: ${col}. Usa solo letras (A-Z)`,
+          "error"
+        );
+        return;
+      }
+    }
+
+    try {
+      const config = {
+        spreadsheetId,
+        sheetName,
+        startRow,
+        columnMapping: {
+          fecha: columnFecha,
+          tipo: columnTipo,
+          cantidad: columnCantidad,
+          basePrecio: columnBasePrecio,
+          prima: columnPrima || "", // PRIMA es opcional
+        },
+      };
+
+      await window.googleSheetsIntegration.saveConfig(config);
+      this.showGoogleSheetsStatus("✅ Configuración guardada", "success");
+    } catch (error) {
+      console.error("Error guardando configuración:", error);
+      this.showGoogleSheetsStatus(`Error: ${error.message}`, "error");
+    }
+  }
+
+  async syncToGoogleSheets() {
+    try {
+      this.showGoogleSheetsStatus("Sincronizando datos...", "info");
+      const result = await window.googleSheetsIntegration.syncDataToSheets(
+        "all"
+      );
+
+      let message = `✅ ${result.rowsWritten} filas escritas`;
+      if (result.rowsDeleted > 0) {
+        message += `, ${result.rowsDeleted} filas del mismo día actualizadas`;
+      }
+
+      this.showGoogleSheetsStatus(message, "success");
+    } catch (error) {
+      console.error("Error sincronizando:", error);
+      this.showGoogleSheetsStatus(`Error: ${error.message}`, "error");
+    }
+  }
+
+  updateGoogleSheetsUI(result) {
+    const authSection = document.getElementById("googleAuthSection");
+    const configSection = document.getElementById("googleConfigSection");
+
+    if (result.isAuthenticated) {
+      authSection.style.display = "none";
+      configSection.style.display = "block";
+      this.showGoogleSheetsStatus("✅ Conectado a Google", "success");
+    } else {
+      authSection.style.display = "block";
+      configSection.style.display = "none";
+      this.showGoogleSheetsStatus("No conectado", "info");
+    }
+  }
+
+  showGoogleSheetsStatus(message, type = "info") {
+    const statusEl = document.getElementById("googleConnectionStatus");
+    if (statusEl) {
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`;
     }
   }
 }

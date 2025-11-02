@@ -4,8 +4,20 @@
     "version": "1.0.4",
     "description": "Procesador de operaciones financieras con persistencia en almacenamiento del navegador",
     "permissions": [
-        "storage"
+        "storage",
+        "identity"
     ],
+    "host_permissions": [
+        "https://accounts.google.com/*",
+        "https://www.googleapis.com/*"
+    ],
+    "oauth2": {
+        "client_id": "TU_CLIENT_ID.apps.googleusercontent.com",
+        "scopes": [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive.readonly"
+        ]
+    },
     "icons": {
         "16": "icon16.png",
         "48": "icon48.png",

@@ -431,6 +431,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="processor">Procesador</button>
             <button class="tab-btn" data-tab="config">Configuración</button>
+            <button class="tab-btn" data-tab="googlesheets">Google Sheets</button>
         </div>
 
         <!-- Pestaña Procesador -->
@@ -650,9 +651,116 @@
                 </div>
             </div>
         </div>
+
+        <!-- Pestaña Google Sheets -->
+        <div id="googlesheetsTab" class="tab-content">
+            <div class="section">
+                <h3>📊 Integración con Google Sheets</h3>
+                
+                <!-- Estado de conexión -->
+                <div id="googleConnectionStatus" class="status info" style="margin-bottom: 16px;">
+                    Verificando conexión...
+                </div>
+
+                <!-- Botón de autenticación -->
+                <div id="googleAuthSection" style="margin-bottom: 20px;">
+                    <button id="googleAuthBtn" class="btn" style="width: 100%;">
+                        🔐 Conectar con Google
+                    </button>
+                </div>
+
+                <!-- Configuración (solo visible cuando está conectado) -->
+                <div id="googleConfigSection" style="display: none;">
+                    <!-- Selección de Spreadsheet -->
+                    <div class="form-group">
+                        <label for="googleSpreadsheetSelect">Seleccionar Spreadsheet:</label>
+                        <select id="googleSpreadsheetSelect" class="input">
+                            <option value="">Cargando...</option>
+                        </select>
+                        <button id="refreshSpreadsheetsBtn" class="btn btn-small" style="margin-top: 8px;">
+                            🔄 Actualizar lista
+                        </button>
+                    </div>
+
+                    <!-- Selección de Hoja -->
+                    <div class="form-group">
+                        <label for="googleSheetSelect">Seleccionar Hoja:</label>
+                        <select id="googleSheetSelect" class="input">
+                            <option value="">Selecciona un spreadsheet primero</option>
+                        </select>
+                    </div>
+
+                    <!-- Configuración de Fila de Inicio -->
+                    <div class="form-group">
+                        <label for="googleStartRow">Fila donde empiezan los datos:</label>
+                        <input type="number" id="googleStartRow" class="input" min="1" placeholder="Ej: 3">
+                        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
+                            Indica la fila donde comienzan los datos (ej: si FECHA está en A3, ingresa 3)
+                        </div>
+                    </div>
+
+                    <!-- Mapeo de columnas -->
+                    <div class="form-group">
+                        <h4>Mapeo de Columnas</h4>
+                        <div id="columnMappingSection">
+                            <div class="form-row">
+                                <div>
+                                    <label>Columna FECHA:</label>
+                                    <input type="text" id="columnFecha" class="input" placeholder="A" maxlength="2" style="text-transform: uppercase;">
+                                </div>
+                                <div>
+                                    <label>Columna TIPO:</label>
+                                    <input type="text" id="columnTipo" class="input" placeholder="B" maxlength="2" style="text-transform: uppercase;">
+                                </div>
+                            </div>
+                            <div class="form-row" style="margin-top: 8px;">
+                                <div>
+                                    <label>Columna CANTIDAD:</label>
+                                    <input type="text" id="columnCantidad" class="input" placeholder="H" maxlength="2" style="text-transform: uppercase;">
+                                </div>
+                                <div>
+                                    <label>Columna BASE/PRECIO:</label>
+                                    <input type="text" id="columnBasePrecio" class="input" placeholder="C" maxlength="2" style="text-transform: uppercase;">
+                                    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
+                                        BASE para CALLS/PUTS, PRECIO para ACCIONES
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-row" style="margin-top: 8px;">
+                                <div>
+                                    <label>Columna PRIMA:</label>
+                                    <input type="text" id="columnPrima" class="input" placeholder="D" maxlength="2" style="text-transform: uppercase;">
+                                    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
+                                        Solo para CALLS/PUTS
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Guardar configuración y sincronizar -->
+                    <div class="btn-row">
+                        <button id="saveGoogleConfigBtn" class="btn">
+                            💾 Guardar Configuración
+                        </button>
+                        <button id="syncToSheetsBtn" class="btn">
+                            📤 Sincronizar Datos
+                        </button>
+                    </div>
+
+                    <!-- Desconectar -->
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #d1d5db;">
+                        <button id="googleDisconnectBtn" class="btn btn-danger" style="width: 100%;">
+                            🚪 Desconectar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="operations-processor.js"></script>
+    <script src="google-sheets-integration.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>
