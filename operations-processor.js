@@ -465,8 +465,10 @@ class OperationsProcessor {
 
     // Eliminar terminaciones del vencimiento (probar sufijos más largos primero)
     const sortedSuffixes = [...suffixes].sort((a, b) => b.length - a.length);
+    let removedSuffix = null;
     for (const s of sortedSuffixes) {
       if (relevantPart.endsWith(s)) {
+        removedSuffix = s;
         relevantPart = relevantPart.slice(0, -s.length);
         break;
       }
@@ -477,14 +479,61 @@ class OperationsProcessor {
       const digits = relevantPart.replace(/[^0-9]/g, "");
       if (!digits) return null;
 
+      // Si el sufijo es de 2 letras (ej: "DI"), siempre es redondo
+      const isTwoLetterSuffix = removedSuffix && removedSuffix.length === 2;
+
       if (digits.endsWith("00")) {
         // Strikes redondos: todo el entero + .00
         return parseFloat(digits + ".00");
       }
 
       if (digits.length === 5) {
-        // Insertar punto antes del último dígito
-        return parseFloat(digits.substring(0, 4) + "." + digits.substring(4));
+        // Si el sufijo es de 2 letras, siempre es redondo
+        if (isTwoLetterSuffix) {
+          return parseFloat(digits + ".00");
+        }
+        
+        // Para sufijos de 1 letra, determinar si es redondo o tiene decimales
+        const asInteger = parseInt(digits, 10);
+        const asDecimal = parseFloat(digits.substring(0, 4) + "." + digits.substring(4));
+        
+        // Si el número como entero es < 10,000, siempre tiene decimales
+        if (asInteger < 10000) {
+          return asDecimal;
+        }
+        
+        // Si el número como entero es >= 10,000:
+        // Necesitamos distinguir entre strikes redondos (ej: 10577 -> 10577.00) 
+        // y strikes con decimales (ej: 82772 -> 8277.2)
+        // 
+        // La clave: si como decimal da un valor >= 10,000, entonces tiene decimales
+        // Si como decimal da < 10,000, entonces es redondo
+        // 
+        // Ejemplos:
+        // - 10577: asDecimal = 1057.7 (< 10000) -> redondo 10577.00 ✓
+        // - 10177: asDecimal = 1017.7 (< 10000) -> redondo 10177.00 ✓
+        // - 82772: asDecimal = 8277.2 (< 10000) -> pero el strike real es 8277.2, así que tiene decimales
+        //
+        // El problema: ambos casos dan < 10,000 como decimal
+        // 
+        // Solución alternativa: si el strike como decimal está en un rango "razonable" 
+        // para strikes con decimales (ej: 8000-9999), entonces tiene decimales
+        // Si está en un rango "bajo" (ej: 1000-1999), entonces es redondo
+        //
+        // Solución: usar un umbral más bajo para distinguir
+        // Si asDecimal >= 5000, probablemente tiene decimales (strikes razonables con decimales)
+        // Si asDecimal < 5000, probablemente es redondo (strikes redondos grandes)
+        // Esto funciona porque:
+        // - 10577 -> 1057.7 (< 5000) -> redondo 10577.00 ✓
+        // - 10177 -> 1017.7 (< 5000) -> redondo 10177.00 ✓
+        // - 82772 -> 8277.2 (>= 5000) -> tiene decimales 8277.2 ✓
+        if (asDecimal >= 5000) {
+          // Probablemente tiene decimales (ej: 82772 -> 8277.2, 84903 -> 8490.3)
+          return asDecimal;
+        } else {
+          // Probablemente es redondo (ej: 10577 -> 10577.00, 10177 -> 10177.00)
+          return parseFloat(digits + ".00");
+        }
       }
 
       if (digits.length === 4) {
