@@ -10,12 +10,13 @@ Una extensión de Chrome para procesar operaciones financieras de opciones desde
 - **Persistencia de datos**: Los datos procesados se guardan automáticamente en el almacenamiento del navegador
 - **Vista previa de resultados**: Visualiza los datos procesados antes de exportarlos
 - **Exportación múltiple**: Descarga archivos CSV o copia datos al portapapeles
+- **Formatos de exportación**: Soporte para formato EPGB y formato DeltaVega (Type | Quantity | Strike | Price)
 - **Sin autenticación**: Acceso directo a la funcionalidad sin necesidad de login
 
 ## Historial de versiones
 
 - Consulta el historial completo en `CHANGELOG.md`.
-- Última versión: 1.0.1 — fix: corrección de error cuando las cantidades eran iguales a 0.
+- Última versión: 1.1.0 — Nueva funcionalidad: Formato de exportación DeltaVega para opciones.
 
 ## Instalación
 
@@ -46,6 +47,7 @@ Una extensión de Chrome para procesar operaciones financieras de opciones desde
 - **Símbolo del Activo**: Selecciona de tu lista personalizada
 - **Vencimiento**: Elige de tu configuración personalizada
 - **Usar Promedios**: Activa/desactiva el procesamiento con promedios por strike
+- **Formato de Exportación**: Selecciona entre formato EPGB (formato tradicional) o DeltaVega (Type | Quantity | Strike | Price)
 
 ### 2. Procesamiento de Archivos
 
@@ -54,6 +56,7 @@ Una extensión de Chrome para procesar operaciones financieras de opciones desde
    - Selecciona el símbolo del activo de tu lista personalizada
    - Elige el vencimiento de tu configuración personalizada
    - Activa/desactiva el modo de promedios según necesites
+   - Selecciona el formato de exportación (EPGB o DeltaVega)
 3. **Procesar**: Haz clic en "Procesar Operaciones"
 4. **Persistencia**: Los datos se procesarán y guardarán automáticamente en el navegador
 
@@ -65,9 +68,11 @@ Una extensión de Chrome para procesar operaciones financieras de opciones desde
 
 ### 4. Exportación
 
-- **Descargar Todo**: Genera un archivo CSV con todas las operaciones
-- **Descargar CALLS/PUTS**: Archivos separados por tipo de opción
-- **Copiar al Portapapeles**: Copia los datos formateados para Excel
+- **Formato EPGB**: Formato tradicional con columnas separadas para CALLS, PUTS y ACCIONES
+- **Formato DeltaVega**: Formato unificado con columnas Type | Quantity | Strike | Price, ordenado por tipo (C, P, S), strike y cantidad
+- **Descargar Todo**: Genera un archivo CSV con todas las operaciones según el formato seleccionado
+- **Descargar CALLS/PUTS**: Archivos separados por tipo de opción (solo en formato EPGB)
+- **Copiar al Portapapeles**: Copia los datos formateados para Excel según el formato seleccionado
 
 ### 5. Gestión de Configuración
 
@@ -138,6 +143,7 @@ Esta extensión simplificada incluye:
 - ✅ **Interfaz simplificada**: Solo las funciones esenciales del procesador
 - ✅ **Configuración dinámica**: Personaliza símbolos y vencimientos según necesidades
 - ✅ **Exportación múltiple**: Descarga archivos CSV o copia datos al portapapeles
+- ✅ **Formatos de exportación**: Soporte para formato EPGB y formato DeltaVega
 
 ## Desarrollo
 

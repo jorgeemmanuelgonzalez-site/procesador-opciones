@@ -74,6 +74,15 @@ class PopupManager {
       });
     }
 
+    // Selector de formato
+    const exportFormatSelect = document.getElementById("exportFormatSelect");
+    if (exportFormatSelect) {
+      exportFormatSelect.addEventListener("change", async (e) => {
+        await window.operationsProcessor.setExportFormat(e.target.value);
+        this.updateUIForFormat(e.target.value);
+      });
+    }
+
     // Archivo CSV
     const csvFileInput = document.getElementById("csvFileInput");
     if (csvFileInput) {
@@ -117,6 +126,14 @@ class PopupManager {
       );
     }
 
+    // Botón de copiar DeltaVega (copia rápida)
+    const quickCopyDeltaVegaBtn = document.getElementById("quickCopyDeltaVegaBtn");
+    if (quickCopyDeltaVegaBtn) {
+      quickCopyDeltaVegaBtn.addEventListener("click", () =>
+        this.copyOperationsData("all")
+      );
+    }
+
     // Botones de resultados
     const downloadAllBtn = document.getElementById("downloadAllBtn");
     if (downloadAllBtn) {
@@ -153,6 +170,14 @@ class PopupManager {
     if (copyAccionesBtn) {
       copyAccionesBtn.addEventListener("click", () =>
         this.copyOperationsData("acciones")
+      );
+    }
+
+    // Botón de copiar DeltaVega (resultados)
+    const copyDeltaVegaBtn = document.getElementById("copyDeltaVegaBtn");
+    if (copyDeltaVegaBtn) {
+      copyDeltaVegaBtn.addEventListener("click", () =>
+        this.copyOperationsData("all")
       );
     }
 
@@ -229,6 +254,7 @@ class PopupManager {
       const symbolSelect = document.getElementById("symbolSelect");
       const expirationSelect = document.getElementById("expirationSelect");
       const useAveraging = document.getElementById("useAveraging");
+      const exportFormatSelect = document.getElementById("exportFormatSelect");
 
       if (symbolSelect) {
         symbolSelect.value = window.operationsProcessor.getActiveSymbol();
@@ -240,6 +266,12 @@ class PopupManager {
 
       if (useAveraging) {
         useAveraging.checked = window.operationsProcessor.getUseAveraging();
+      }
+
+      if (exportFormatSelect) {
+        const currentFormat = window.operationsProcessor.getExportFormat();
+        exportFormatSelect.value = currentFormat || "EPGB";
+        this.updateUIForFormat(currentFormat || "EPGB");
       }
     } catch (error) {
       console.error("Error cargando configuración:", error);
@@ -1191,6 +1223,36 @@ class PopupManager {
     } catch (error) {
       console.error("Error actualizando vencimiento:", error);
       this.showStatus("Error actualizando vencimiento", "error");
+    }
+  }
+
+  /**
+   * Actualiza la UI según el formato de exportación seleccionado
+   * @param {string} format - Formato de exportación ("EPGB" o "DeltaVega")
+   */
+  updateUIForFormat(format) {
+    const isDeltaVega = format === "DeltaVega";
+    
+    // Botones de copia rápida
+    const quickCopyEPGB = document.getElementById("quickCopyButtonsEPGB");
+    const quickCopyDeltaVega = document.getElementById("quickCopyButtonsDeltaVega");
+    
+    if (quickCopyEPGB) {
+      quickCopyEPGB.style.display = isDeltaVega ? "none" : "flex";
+    }
+    if (quickCopyDeltaVega) {
+      quickCopyDeltaVega.style.display = isDeltaVega ? "flex" : "none";
+    }
+    
+    // Botones de copiar en resultados
+    const copyEPGB = document.getElementById("copyButtonsEPGB");
+    const copyDeltaVega = document.getElementById("copyButtonsDeltaVega");
+    
+    if (copyEPGB) {
+      copyEPGB.style.display = isDeltaVega ? "none" : "flex";
+    }
+    if (copyDeltaVega) {
+      copyDeltaVega.style.display = isDeltaVega ? "flex" : "none";
     }
   }
 

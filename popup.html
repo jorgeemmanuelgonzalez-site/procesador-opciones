@@ -12,8 +12,8 @@
         }
 
         body {
-            width: 450px;
-            min-height: 600px;
+            width: 500px;
+            min-height: 800px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f8fafc;
             color: #1f2937;
@@ -225,7 +225,7 @@
 
         .tabs {
             display: flex;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             background: #f3f4f6;
             border-radius: 8px;
             padding: 4px;
@@ -233,7 +233,7 @@
 
         .tab-btn {
             flex: 1;
-            padding: 10px 16px;
+            padding: 6px 12px;
             border: none;
             background: transparent;
             cursor: pointer;
@@ -461,18 +461,29 @@
                         </label>
                     </div>
                 </div>
+                
+                <div class="form-group">
+                    <label for="exportFormatSelect">Formato de Exportación:</label>
+                    <select id="exportFormatSelect" class="input">
+                        <option value="EPGB">EPGB</option>
+                        <option value="DeltaVega">DeltaVega</option>
+                    </select>
+                </div>
                            <!-- Botones de copia rápida -->
             <div class="section" id="quickCopySection" style="display: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3>Copiar Datos</h3>
                     <div id="lastReportInfo" style="font-size: 11px; color: #6b7280; font-family: 'Courier New', monospace;">
                         <!-- Se llenará dinámicamente -->
                     </div>
                 </div>
-                <div class="btn-row">
+                <div class="btn-row" id="quickCopyButtonsEPGB">
                     <button id="quickCopyCallsBtn" class="btn">Calls</button>
                     <button id="quickCopyPutsBtn" class="btn">Puts</button>
                     <button id="quickCopyAccionesBtn" class="btn">Acciones</button>
+                </div>
+                <div class="btn-row" id="quickCopyButtonsDeltaVega" style="display: none;">
+                    <button id="quickCopyDeltaVegaBtn" class="btn">Copiar</button>
                 </div>
             </div>
 
@@ -480,28 +491,13 @@
 
             
                        </div>
-                        <div style="margin-top: 20px; margin-bottom: 20px; padding: 12px; background: rgba(139, 92, 246, 0.08); border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.15);">
-                         <div style="display: flex; align-items: center; gap: 12px;">
-                             <div style="flex: 1;">
-                                 <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 1.4;">
-                                     Si querés aportar para próximas mejoras:
-                                 </p>
-                             </div>
-                             <div style="flex: 0 0 auto;">
-                                 <a href="https://tecito.app/markettools" target="_blank" style="display: inline-block; text-decoration: none;">
-                                     <div style="background: #6d28d9; color: white; padding: 6px 12px; border-radius: 4px; font-weight: 500; font-size: 11px; transition: background-color 0.2s; box-shadow: 0 1px 2px rgba(109, 40, 217, 0.3);">
-                                         ☕ Colaborá con un tecito
-                                     </div>
-                                 </a>
-                             </div>
-                         </div>
-                     </div>
+                   
             <!-- Cargar archivo -->
             <div class="section">
                 <h3>Cargar Archivo CSV</h3>
                 
                 <div class="form-group">
-                    <label for="csvFileInput">Seleccionar archivo CSV:</label>
+                    
                     <input type="file" id="csvFileInput" accept=".csv" class="input">
                 </div>
 
@@ -511,6 +507,22 @@
                 </div>
 
                 <div id="operationsStatus"></div>
+            </div>
+            <div style="margin-top: 20px; margin-bottom: 20px; padding: 12px; background: rgba(139, 92, 246, 0.08); border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.15);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="flex: 1;">
+                        <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 1.4;">
+                            Si querés aportar para próximas mejoras:
+                        </p>
+                    </div>
+                    <div style="flex: 0 0 auto;">
+                        <a href="https://tecito.app/markettools" target="_blank" style="display: inline-block; text-decoration: none;">
+                            <div style="background: #6d28d9; color: white; padding: 6px 12px; border-radius: 4px; font-weight: 500; font-size: 11px; transition: background-color 0.2s; box-shadow: 0 1px 2px rgba(109, 40, 217, 0.3);">
+                                ☕ Colaborá con un tecito
+                            </div>
+                        </a>
+                    </div>
+                </div>
             </div>
 
             <!-- Resultados -->
@@ -535,10 +547,13 @@
                         <button class="preview-tab-btn" data-tab="acciones">ACCIONES</button>
                     </div>
 
-                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;" id="copyButtonsEPGB">
                         <button id="copyCallsBtn" class="btn btn-small">Copiar Calls</button>
                         <button id="copyPutsBtn" class="btn btn-small">Copiar Puts</button>
                         <button id="copyAccionesBtn" class="btn btn-small">Copiar Acciones</button>
+                    </div>
+                    <div style="display: none; gap: 8px; margin-bottom: 16px;" id="copyButtonsDeltaVega">
+                        <button id="copyDeltaVegaBtn" class="btn btn-small">Copiar</button>
                     </div>
 
 <!--                     <div style="display: flex; gap: 8px; margin-bottom: 16px;">

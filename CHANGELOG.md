@@ -2,6 +2,26 @@
 
 Todas las modificaciones notables de este proyecto se documentarán en este archivo.
 
+## [1.1.0] - 2025-11-09
+
+### Nuevas funcionalidades
+
+- **Formato de exportación DeltaVega**: Se agregó un nuevo formato de exportación llamado "DeltaVega" que genera datos en formato unificado con columnas Type | Quantity | Strike | Price.
+- **Selector de formato de exportación**: Ahora se puede seleccionar entre formato EPGB (tradicional) o DeltaVega desde la interfaz de configuración.
+- **Exportación unificada DeltaVega**: El formato DeltaVega combina todas las operaciones (CALLS, PUTS y ACCIONES) en un solo formato ordenado por tipo (C, P, S), strike y cantidad.
+- **Botones de copia específicos por formato**: Se agregaron botones de copia rápida específicos para cada formato de exportación, mostrándose según el formato seleccionado.
+
+### Mejoras técnicas
+
+- Generación de datos optimizada para formato DeltaVega con ordenamiento automático.
+- Interfaz de usuario adaptativa que muestra/oculta botones según el formato de exportación seleccionado.
+
+## [1.0.5] - 2025-11-08
+
+### Fixes
+
+- **Corrección de formateo para strikes mayores a 9mil**: Se corrigió el procesamiento de strikes de 5 dígitos mayores a 10,000 para distinguir correctamente entre strikes redondos (ej: 10577 → 10577.00) y strikes con decimales (ej: 82772 → 8277.2). Se implementó lógica mejorada que evalúa el rango del strike como decimal para determinar si es redondo o tiene decimales.
+
 ## [1.0.4] - 2025-10-30
 
 ### Fixes

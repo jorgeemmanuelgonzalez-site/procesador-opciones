@@ -15,6 +15,7 @@ class OperationsProcessor {
     this.expiration = "OCT";
     this.lastProcessedFile = null;
     this.lastProcessedTime = null;
+    this.exportFormat = "EPGB"; // Formato de exportación: "EPGB" o "DeltaVega"
 
     // Configuración dinámica
     this.availableSymbols = [];
@@ -65,6 +66,7 @@ class OperationsProcessor {
         "activeSymbol",
         "expiration",
         "useAveraging",
+        "exportFormat",
         "lastProcessedFile",
         "lastProcessedTime",
         "callsData",
@@ -79,6 +81,7 @@ class OperationsProcessor {
       this.activeSymbol = result.activeSymbol || "GFG";
       this.expiration = result.expiration || "OCT";
       this.useAveraging = result.useAveraging || false;
+      this.exportFormat = result.exportFormat || "EPGB";
       this.lastProcessedFile = result.lastProcessedFile || null;
       this.lastProcessedTime = result.lastProcessedTime || null;
 
@@ -109,6 +112,7 @@ class OperationsProcessor {
         activeSymbol: this.activeSymbol,
         expiration: this.expiration,
         useAveraging: this.useAveraging,
+        exportFormat: this.exportFormat,
         lastProcessedFile: this.lastProcessedFile,
         lastProcessedTime: this.lastProcessedTime,
         callsData: this.callsData,
@@ -504,34 +508,23 @@ class OperationsProcessor {
         
         // Si el número como entero es >= 10,000:
         // Necesitamos distinguir entre strikes redondos (ej: 10577 -> 10577.00) 
-        // y strikes con decimales (ej: 82772 -> 8277.2)
+        // y strikes con decimales (ej: 82772 -> 8277.2, 44549 -> 4454.9)
         // 
-        // La clave: si como decimal da un valor >= 10,000, entonces tiene decimales
-        // Si como decimal da < 10,000, entonces es redondo
+        // La clave está en el rango del strike como decimal:
+        // - Si el strike como decimal está en un rango "típico" de strikes (2000-9999), tiene decimales
+        // - Si el strike como decimal está en un rango "bajo" (< 2000), es redondo
         // 
         // Ejemplos:
-        // - 10577: asDecimal = 1057.7 (< 10000) -> redondo 10577.00 ✓
-        // - 10177: asDecimal = 1017.7 (< 10000) -> redondo 10177.00 ✓
-        // - 82772: asDecimal = 8277.2 (< 10000) -> pero el strike real es 8277.2, así que tiene decimales
-        //
-        // El problema: ambos casos dan < 10,000 como decimal
-        // 
-        // Solución alternativa: si el strike como decimal está en un rango "razonable" 
-        // para strikes con decimales (ej: 8000-9999), entonces tiene decimales
-        // Si está en un rango "bajo" (ej: 1000-1999), entonces es redondo
-        //
-        // Solución: usar un umbral más bajo para distinguir
-        // Si asDecimal >= 5000, probablemente tiene decimales (strikes razonables con decimales)
-        // Si asDecimal < 5000, probablemente es redondo (strikes redondos grandes)
-        // Esto funciona porque:
-        // - 10577 -> 1057.7 (< 5000) -> redondo 10577.00 ✓
-        // - 10177 -> 1017.7 (< 5000) -> redondo 10177.00 ✓
-        // - 82772 -> 8277.2 (>= 5000) -> tiene decimales 8277.2 ✓
-        if (asDecimal >= 5000) {
-          // Probablemente tiene decimales (ej: 82772 -> 8277.2, 84903 -> 8490.3)
+        // - 10577: asDecimal = 1057.7 (< 2000) -> redondo 10577.00 ✓
+        // - 10177: asDecimal = 1017.7 (< 2000) -> redondo 10177.00 ✓
+        // - 82772: asDecimal = 8277.2 (>= 2000) -> tiene decimales 8277.2 ✓
+        // - 44549: asDecimal = 4454.9 (>= 2000) -> tiene decimales 4454.9 ✓
+        // - 84903: asDecimal = 8490.3 (>= 2000) -> tiene decimales 8490.3 ✓
+        if (asDecimal >= 2000) {
+          // Está en rango típico de strikes con decimales
           return asDecimal;
         } else {
-          // Probablemente es redondo (ej: 10577 -> 10577.00, 10177 -> 10177.00)
+          // Está en rango bajo, probablemente es un strike redondo grande
           return parseFloat(digits + ".00");
         }
       }
@@ -901,11 +894,87 @@ class OperationsProcessor {
   }
 
   /**
+   * Genera datos en formato DeltaVega (Type | Quantity | Strike | Price)
+   * @returns {string} Texto formateado para Excel
+   */
+  generateDeltaVegaData() {
+    const data = [];
+    
+    // Combinar todas las operaciones en un solo array
+    const allOperations = [];
+    
+    // Agregar Calls
+    this.callsData.forEach((op) => {
+      allOperations.push({
+        type: "C",
+        quantity: op.cantidad,
+        strike: op.base,
+        price: op.precio,
+      });
+    });
+    
+    // Agregar Puts
+    this.putsData.forEach((op) => {
+      allOperations.push({
+        type: "P",
+        quantity: op.cantidad,
+        strike: op.base,
+        price: op.precio,
+      });
+    });
+    
+    // Agregar Subyacentes (S)
+    this.accionesData.forEach((op) => {
+      allOperations.push({
+        type: "S",
+        quantity: op.cantidad,
+        strike: null, // Subyacentes no tienen strike
+        price: op.precio,
+      });
+    });
+    
+    // Ordenar: primero por tipo (C, P, S), luego por strike (si aplica), luego por cantidad
+    allOperations.sort((a, b) => {
+      // Ordenar por tipo primero
+      const typeOrder = { C: 1, P: 2, S: 3 };
+      if (typeOrder[a.type] !== typeOrder[b.type]) {
+        return typeOrder[a.type] - typeOrder[b.type];
+      }
+      
+      // Si ambos tienen strike, ordenar por strike
+      if (a.strike !== null && b.strike !== null) {
+        if (a.strike !== b.strike) {
+          return a.strike - b.strike;
+        }
+      }
+      
+      // Finalmente ordenar por cantidad
+      return a.quantity - b.quantity;
+    });
+    
+    // Formatear cada operación (DeltaVega usa punto para decimales)
+    allOperations.forEach((op) => {
+      const quantity = op.quantity.toString();
+      const strike = op.strike !== null ? op.strike.toFixed(2) : "";
+      const price = Number(op.price).toFixed(2);
+      data.push(`${op.type}\t${quantity}\t${strike}\t${price}`);
+    });
+    
+    return data.join("\n");
+  }
+
+  /**
    * Genera datos para copiar al portapapeles (formato para pegar en Excel)
-   * @param {string} type - 'calls', 'puts' o 'all'
+   * @param {string} type - 'calls', 'puts', 'acciones' o 'all' (ignorado si formato es DeltaVega)
    * @returns {string} Texto formateado para Excel
    */
   generateCopyData(type = "all") {
+    // Si el formato es DeltaVega, siempre devolver formato unificado
+    if (this.exportFormat === "DeltaVega") {
+      return this.generateDeltaVegaData();
+    }
+
+    // Formato EPGB (comportamiento original)
     let data = [];
 
     if (type === "all") {
@@ -985,47 +1054,111 @@ class OperationsProcessor {
 
     const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const modePrefix = this.useAveraging ? "Promediadas_" : "";
-    const filename = `Operaciones_${modePrefix}${this.activeSymbol}_${fecha}.csv`;
+    const formatPrefix = this.exportFormat === "DeltaVega" ? "DeltaVega_" : "";
+    const filename = `Operaciones_${formatPrefix}${modePrefix}${this.activeSymbol}_${fecha}.csv`;
 
     let csvContent = "";
-    const modeText = this.useAveraging
-      ? " (CON PROMEDIOS)"
-      : " (SIN PROMEDIOS)";
 
-    // Hoja CALLS
-    csvContent += `OPERACIONES CALLS${modeText}\n`;
-    csvContent += "Cantidad;Base;Precio\n"; // Usar punto y coma como separador para formato europeo
-    this.callsData.forEach((op) => {
-      // Formatear números con coma decimal
-      const cantidad = op.cantidad.toString().replace(".", ",");
-      const base = op.base.toString().replace(".", ",");
-      const precio = Number(op.precio).toFixed(4).replace(".", ",");
-      csvContent += `${cantidad};${base};${precio}\n`;
-    });
+    // Si el formato es DeltaVega, generar formato unificado
+    if (this.exportFormat === "DeltaVega") {
+      // Encabezados (usar punto y coma como separador para formato CSV europeo)
+      csvContent += "Type;Quantity;Strike;Price\n";
+      
+      // Combinar todas las operaciones
+      const allOperations = [];
+      
+      // Agregar Calls
+      this.callsData.forEach((op) => {
+        allOperations.push({
+          type: "C",
+          quantity: op.cantidad,
+          strike: op.base,
+          price: op.precio,
+        });
+      });
+      
+      // Agregar Puts
+      this.putsData.forEach((op) => {
+        allOperations.push({
+          type: "P",
+          quantity: op.cantidad,
+          strike: op.base,
+          price: op.precio,
+        });
+      });
+      
+      // Agregar Subyacentes (S)
+      this.accionesData.forEach((op) => {
+        allOperations.push({
+          type: "S",
+          quantity: op.cantidad,
+          strike: null,
+          price: op.precio,
+        });
+      });
+      
+      // Ordenar igual que en generateDeltaVegaData
+      allOperations.sort((a, b) => {
+        const typeOrder = { C: 1, P: 2, S: 3 };
+        if (typeOrder[a.type] !== typeOrder[b.type]) {
+          return typeOrder[a.type] - typeOrder[b.type];
+        }
+        if (a.strike !== null && b.strike !== null) {
+          if (a.strike !== b.strike) {
+            return a.strike - b.strike;
+          }
+        }
+        return a.quantity - b.quantity;
+      });
+      
+      // Formatear cada operación (DeltaVega usa punto para decimales, punto y coma como separador de columnas)
+      allOperations.forEach((op) => {
+        const quantity = op.quantity.toString();
+        const strike = op.strike !== null ? op.strike.toFixed(2) : "";
+        const price = Number(op.price).toFixed(2);
+        csvContent += `${op.type};${quantity};${strike};${price}\n`;
+      });
+    } else {
+      // Formato EPGB (comportamiento original)
+      const modeText = this.useAveraging
+        ? " (CON PROMEDIOS)"
+        : " (SIN PROMEDIOS)";
 
-    csvContent += "\n";
+      // Hoja CALLS
+      csvContent += `OPERACIONES CALLS${modeText}\n`;
+      csvContent += "Cantidad;Base;Precio\n"; // Usar punto y coma como separador para formato europeo
+      this.callsData.forEach((op) => {
+        // Formatear números con coma decimal
+        const cantidad = op.cantidad.toString().replace(".", ",");
+        const base = op.base.toString().replace(".", ",");
+        const precio = Number(op.precio).toFixed(4).replace(".", ",");
+        csvContent += `${cantidad};${base};${precio}\n`;
+      });
 
-    // Hoja PUTS
-    csvContent += `OPERACIONES PUTS${modeText}\n`;
-    csvContent += "Cantidad;Base;Precio\n"; // Usar punto y coma como separador para formato europeo
-    this.putsData.forEach((op) => {
-      // Formatear números con coma decimal
-      const cantidad = op.cantidad.toString().replace(".", ",");
-      const base = op.base.toString().replace(".", ",");
-      const precio = Number(op.precio).toFixed(4).replace(".", ",");
-      csvContent += `${cantidad};${base};${precio}\n`;
-    });
+      csvContent += "\n";
 
-    csvContent += "\n";
+      // Hoja PUTS
+      csvContent += `OPERACIONES PUTS${modeText}\n`;
+      csvContent += "Cantidad;Base;Precio\n"; // Usar punto y coma como separador para formato europeo
+      this.putsData.forEach((op) => {
+        // Formatear números con coma decimal
+        const cantidad = op.cantidad.toString().replace(".", ",");
+        const base = op.base.toString().replace(".", ",");
+        const precio = Number(op.precio).toFixed(4).replace(".", ",");
+        csvContent += `${cantidad};${base};${precio}\n`;
+      });
 
-    // Hoja ACCIONES
-    csvContent += `OPERACIONES ACCIONES${modeText}\n`;
-    csvContent += "Símbolo;Cantidad;Precio\n";
-    this.accionesData.forEach((op) => {
-      const cantidad = op.cantidad.toString().replace(".", ",");
-      const precio = Number(op.precio).toFixed(4).replace(".", ",");
-      csvContent += `${op.simbolo};${cantidad};${precio}\n`;
-    });
+      csvContent += "\n";
+
+      // Hoja ACCIONES
+      csvContent += `OPERACIONES ACCIONES${modeText}\n`;
+      csvContent += "Símbolo;Cantidad;Precio\n";
+      this.accionesData.forEach((op) => {
+        const cantidad = op.cantidad.toString().replace(".", ",");
+        const precio = Number(op.precio).toFixed(4).replace(".", ",");
+        csvContent += `${op.simbolo};${cantidad};${precio}\n`;
+      });
+    }
 
     // Crear y descargar archivo
     const blob = new Blob([csvContent], { type: "text/csv;charset-utf-8;" });
@@ -1347,6 +1480,25 @@ class OperationsProcessor {
    */
   getUseAveraging() {
     return this.useAveraging;
+  }
+
+  /**
+   * Configura el formato de exportación
+   * @param {string} format - Formato de exportación ("EPGB" o "DeltaVega")
+   */
+  async setExportFormat(format) {
+    if (format === "EPGB" || format === "DeltaVega") {
+      this.exportFormat = format;
+      await this.saveConfig();
+    }
+  }
+
+  /**
+   * Obtiene el formato de exportación actual
+   * @returns {string} Formato de exportación ("EPGB" o "DeltaVega")
+   */
+  getExportFormat() {
+    return this.exportFormat;
   }
 
   /**
