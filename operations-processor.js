@@ -479,7 +479,7 @@ class OperationsProcessor {
     }
 
     try {
-      // Aplicar reglas de strike: 4 o 5 dígitos
+      // Aplicar reglas de strike: 4, 5 o 6 dígitos
       const digits = relevantPart.replace(/[^0-9]/g, "");
       if (!digits) return null;
 
@@ -502,6 +502,7 @@ class OperationsProcessor {
         const asDecimal = parseFloat(digits.substring(0, 4) + "." + digits.substring(4));
         
         // Si el número como entero es < 10,000, siempre tiene decimales
+        // Ejemplos: 26549 -> 2654.9, 27549 -> 2754.9, 32772 -> 3277.2, 50115 -> 5011.5
         if (asInteger < 10000) {
           return asDecimal;
         }
@@ -511,12 +512,15 @@ class OperationsProcessor {
         // y strikes con decimales (ej: 82772 -> 8277.2, 44549 -> 4454.9)
         // 
         // La clave está en el rango del strike como decimal:
-        // - Si el strike como decimal está en un rango "típico" de strikes (2000-9999), tiene decimales
+        // - Si el strike como decimal está en un rango "típico" de strikes (>= 2000), tiene decimales
         // - Si el strike como decimal está en un rango "bajo" (< 2000), es redondo
         // 
         // Ejemplos:
         // - 10577: asDecimal = 1057.7 (< 2000) -> redondo 10577.00 ✓
         // - 10177: asDecimal = 1017.7 (< 2000) -> redondo 10177.00 ✓
+        // - 10977: asDecimal = 1097.7 (< 2000) -> redondo 10977.00 ✓
+        // - 11377: asDecimal = 1137.7 (< 2000) -> redondo 11377.00 ✓
+        // - 11777: asDecimal = 1177.7 (< 2000) -> redondo 11777.00 ✓
         // - 82772: asDecimal = 8277.2 (>= 2000) -> tiene decimales 8277.2 ✓
         // - 44549: asDecimal = 4454.9 (>= 2000) -> tiene decimales 4454.9 ✓
         // - 84903: asDecimal = 8490.3 (>= 2000) -> tiene decimales 8490.3 ✓
@@ -535,24 +539,10 @@ class OperationsProcessor {
           return parseFloat(digits + ".00");
         }
         
-        // Para números de 4 dígitos, determinar si es redondo o tiene decimales
-        const asInteger = parseInt(digits, 10);
-        const asDecimal = parseFloat(digits.substring(0, 2) + "." + digits.substring(2));
-        
-        // Si el número como entero es >= 1000, probablemente es un strike redondo
-        // (ej: 5633 -> 5633.00, no 56.33)
-        if (asInteger >= 1000) {
-          return parseFloat(digits + ".00");
-        }
-        
-        // Si el número como entero es < 1000, podría tener decimales
-        // pero verificar si el decimal resultante tiene sentido
-        // Si el decimal es < 100, probablemente es un strike con decimales
-        if (asDecimal < 100) {
-          return asDecimal;
-        }
-        
-        // Por defecto, tratar como redondo
+        // Para números de 4 dígitos, si termina en "00", es redondo
+        // Si no termina en "00", también lo tratamos como redondo porque
+        // los decimales deberían estar en el ticker original (6 dígitos)
+        // Si el ticker solo tiene 4 dígitos, asumimos que es redondo
         return parseFloat(digits + ".00");
       }
 
