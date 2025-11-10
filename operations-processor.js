@@ -530,8 +530,30 @@ class OperationsProcessor {
       }
 
       if (digits.length === 4) {
-        // Insertar punto antes de los últimos 2 dígitos
-        return parseFloat(digits.substring(0, 2) + "." + digits.substring(2));
+        // Si el sufijo es de 2 letras, siempre es redondo
+        if (isTwoLetterSuffix) {
+          return parseFloat(digits + ".00");
+        }
+        
+        // Para números de 4 dígitos, determinar si es redondo o tiene decimales
+        const asInteger = parseInt(digits, 10);
+        const asDecimal = parseFloat(digits.substring(0, 2) + "." + digits.substring(2));
+        
+        // Si el número como entero es >= 1000, probablemente es un strike redondo
+        // (ej: 5633 -> 5633.00, no 56.33)
+        if (asInteger >= 1000) {
+          return parseFloat(digits + ".00");
+        }
+        
+        // Si el número como entero es < 1000, podría tener decimales
+        // pero verificar si el decimal resultante tiene sentido
+        // Si el decimal es < 100, probablemente es un strike con decimales
+        if (asDecimal < 100) {
+          return asDecimal;
+        }
+        
+        // Por defecto, tratar como redondo
+        return parseFloat(digits + ".00");
       }
 
       // Si no coincide con 4 o 5 dígitos, intentar parsear directo
@@ -988,7 +1010,7 @@ class OperationsProcessor {
         data.push("Cantidad\tBase\tPrecio");
         this.callsData.forEach((op) => {
           const cantidad = op.cantidad.toString().replace(".", ",");
-          const base = op.base.toString().replace(".", ",");
+          const base = Number(op.base).toFixed(2).replace(".", ",");
           const precio = Number(op.precio).toFixed(4).replace(".", ",");
           data.push(`${cantidad}\t${base}\t${precio}`);
         });
@@ -1000,8 +1022,8 @@ class OperationsProcessor {
         data.push("Cantidad\tBase\tPrecio");
         this.putsData.forEach((op) => {
           const cantidad = op.cantidad.toString().replace(".", ",");
-          const base = op.base.toString().replace(".", ",");
-          const precio = op.precio.toString().replace(".", ",");
+          const base = Number(op.base).toFixed(2).replace(".", ",");
+          const precio = Number(op.precio).toFixed(4).replace(".", ",");
           data.push(`${cantidad}\t${base}\t${precio}`);
         });
         data.push("");
@@ -1020,7 +1042,7 @@ class OperationsProcessor {
       // Para "calls" solo los datos, sin encabezados
       this.callsData.forEach((op) => {
         const cantidad = op.cantidad.toString().replace(".", ",");
-        const base = op.base.toString().replace(".", ",");
+        const base = Number(op.base).toFixed(2).replace(".", ",");
         const precio = Number(op.precio).toFixed(4).replace(".", ",");
         data.push(`${cantidad}\t${base}\t${precio}`);
       });
@@ -1028,7 +1050,7 @@ class OperationsProcessor {
       // Para "puts" solo los datos, sin encabezados
       this.putsData.forEach((op) => {
         const cantidad = op.cantidad.toString().replace(".", ",");
-        const base = op.base.toString().replace(".", ",");
+        const base = Number(op.base).toFixed(2).replace(".", ",");
         const precio = Number(op.precio).toFixed(4).replace(".", ",");
         data.push(`${cantidad}\t${base}\t${precio}`);
       });
@@ -1130,7 +1152,7 @@ class OperationsProcessor {
       this.callsData.forEach((op) => {
         // Formatear números con coma decimal
         const cantidad = op.cantidad.toString().replace(".", ",");
-        const base = op.base.toString().replace(".", ",");
+        const base = Number(op.base).toFixed(2).replace(".", ",");
         const precio = Number(op.precio).toFixed(4).replace(".", ",");
         csvContent += `${cantidad};${base};${precio}\n`;
       });
@@ -1143,7 +1165,7 @@ class OperationsProcessor {
       this.putsData.forEach((op) => {
         // Formatear números con coma decimal
         const cantidad = op.cantidad.toString().replace(".", ",");
-        const base = op.base.toString().replace(".", ",");
+        const base = Number(op.base).toFixed(2).replace(".", ",");
         const precio = Number(op.precio).toFixed(4).replace(".", ",");
         csvContent += `${cantidad};${base};${precio}\n`;
       });
@@ -1192,7 +1214,7 @@ class OperationsProcessor {
     csvContent += "Cantidad;Base;Precio\n";
     this.callsData.forEach((op) => {
       const cantidad = op.cantidad.toString().replace(".", ",");
-      const base = op.base.toString().replace(".", ",");
+      const base = Number(op.base).toFixed(2).replace(".", ",");
       const precio = Number(op.precio).toFixed(4).replace(".", ",");
       csvContent += `${cantidad};${base};${precio}\n`;
     });
@@ -1228,8 +1250,8 @@ class OperationsProcessor {
     csvContent += "Cantidad;Base;Precio\n";
     this.putsData.forEach((op) => {
       const cantidad = op.cantidad.toString().replace(".", ",");
-      const base = op.base.toString().replace(".", ",");
-      const precio = op.precio.toString().replace(".", ",");
+      const base = Number(op.base).toFixed(2).replace(".", ",");
+      const precio = Number(op.precio).toFixed(4).replace(".", ",");
       csvContent += `${cantidad};${base};${precio}\n`;
     });
 
