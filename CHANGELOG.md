@@ -2,6 +2,30 @@
 
 Todas las modificaciones notables de este proyecto se documentarán en este archivo.
 
+## [2.0.0] - 2025-01-XX
+
+### Nuevas funcionalidades
+
+- **Integración con sistemas OMS mediante XOMS**: Se agregó la capacidad de procesar operaciones directamente desde sistemas OMS (Order Management System) sin necesidad de archivos CSV. La extensión se conecta a sistemas OMS a través de una API externa que actúa como intermediario.
+- **Presets de brokers/OMS preconfigurados**: Se incluyeron 7 presets preconfigurados para facilitar la conexión: Cocos Capital, Eco Valores, Veta Capital, Bull Market Brokers, Cohen, Adcap y BCCH. Cada preset incluye las URLs de API y WebSocket correspondientes.
+- **Nueva pestaña "Procesar con OMS"**: Se agregó una nueva pestaña en la interfaz principal que permite alternar entre procesamiento de archivos CSV y procesamiento mediante OMS.
+- **Configuración de credenciales XOMS**: Nueva sección en configuración avanzada para gestionar las credenciales de conexión OMS (API URL, WebSocket URL, Usuario, Contraseña y Cuenta). Las credenciales se almacenan únicamente en el almacenamiento local del navegador.
+- **Selector de preset XOMS**: Selector desplegable que permite elegir un broker preconfigurado o configurar conexiones personalizadas manualmente.
+- **Procesamiento remoto de operaciones**: Las operaciones se obtienen directamente desde el sistema OMS mediante una consulta única a la API externa, que cierra la sesión inmediatamente después de obtener los datos.
+
+### Mejoras técnicas
+
+- Integración con API externa del procesador de mercado (`api-procesador-mercado.mercadodecapitales.site`) para consultar operaciones OMS.
+- Validación de configuración XOMS antes de permitir el procesamiento.
+- Conversión automática de datos JSON recibidos de la API OMS al formato CSV interno para procesamiento unificado.
+- Interfaz adaptativa que muestra advertencias cuando la configuración OMS está incompleta.
+- Persistencia de preferencia de modo de procesamiento (CSV u OMS) en el almacenamiento local.
+
+### Seguridad y privacidad
+
+- **Sin almacenamiento en servidores externos**: Las credenciales XOMS se guardan únicamente en el almacenamiento local del navegador (chrome.storage.local).
+- **Sesiones temporales**: La API externa cierra la sesión OMS inmediatamente después de obtener los datos, sin almacenar información en servidores.
+
 ## [1.1.0] - 2025-11-09
 
 ### Nuevas funcionalidades

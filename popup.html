@@ -256,6 +256,14 @@
             display: block;
         }
 
+        .process-tab-content {
+            display: none;
+        }
+
+        .process-tab-content.active {
+            display: block;
+        }
+
         .preview-tabs {
             display: flex;
             gap: 4px;
@@ -492,21 +500,45 @@
             
                        </div>
                    
-            <!-- Cargar archivo -->
+            <!-- Sección de procesamiento con pestañas -->
             <div class="section">
-                <h3>Cargar Archivo CSV</h3>
-                
-                <div class="form-group">
+                <!-- Pestañas de procesamiento -->
+                <div class="tabs" style="margin-bottom: 16px;">
+                    <button class="tab-btn process-tab-btn active" data-process-tab="csv">Procesar con CSV</button>
+                    <button class="tab-btn process-tab-btn" data-process-tab="oms">Procesar con OMS</button>
+                </div>
+
+                <!-- Contenido CSV -->
+                <div id="csvProcessTab" class="process-tab-content active">
+                    <h3 style="margin-bottom: 16px;">Cargar Archivo CSV</h3>
                     
-                    <input type="file" id="csvFileInput" accept=".csv" class="input">
+                    <div class="form-group">
+                        <input type="file" id="csvFileInput" accept=".csv" class="input">
+                    </div>
+
+                    <div class="btn-row">
+                        <button id="processOperationsBtn" class="btn" disabled>Procesar Operaciones</button>
+                        <button id="clearDataBtn" class="btn btn-danger">Limpiar Datos</button>
+                    </div>
+
+                    <div id="operationsStatus"></div>
                 </div>
 
-                <div class="btn-row">
-                    <button id="processOperationsBtn" class="btn" disabled>Procesar Operaciones</button>
-                    <button id="clearDataBtn" class="btn btn-danger">Limpiar Datos</button>
-                </div>
+                <!-- Contenido OMS -->
+                <div id="omsProcessTab" class="process-tab-content">
+                    <h3 style="margin-bottom: 16px;">Procesar mediante OMS</h3>
+                    
+                    <div id="omsConfigWarning" style="display: none; padding: 12px; background: #fee2e2; border: 1px solid #fecaca; border-radius: 6px; margin-bottom: 16px; color: #991b1b; font-size: 13px;">
+                        Para habilitar diríjase a configuraciones y complete la sección "conectar con mediante xoms". Para más información diríjase a <a href="https://procesador-opciones.mercadodecapitales.site" target="_blank" style="color: #dc2626; text-decoration: underline;">https://procesador-opciones.mercadodecapitales.site</a>
+                    </div>
 
-                <div id="operationsStatus"></div>
+                    <div class="btn-row">
+                        <button id="processOmsBtn" class="btn">Procesar</button>
+                        <button id="clearDataBtnOms" class="btn btn-danger">Limpiar Datos</button>
+                    </div>
+
+                    <div id="omsOperationsStatus"></div>
+                </div>
             </div>
             <div style="margin-top: 20px; margin-bottom: 20px; padding: 12px; background: rgba(139, 92, 246, 0.08); border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.15);">
                 <div style="display: flex; align-items: center; gap: 12px;">
@@ -662,6 +694,64 @@
                 <div class="btn-row">
                     <button id="resetConfigBtn" class="btn btn-danger btn-small">Restaurar Configuración por Defecto</button>
                     <button id="saveConfigBtn" class="btn btn-small">Guardar Configuración</button>
+                </div>
+            </div>
+
+            <!-- Configuración XOMS -->
+            <div class="section">
+                <h3>Conectar con mediante xoms</h3>
+                
+                <div class="form-group">
+                    <label for="xomsPresetSelect">Broker / OMS:</label>
+                    <select id="xomsPresetSelect" class="input">
+                        <option value="cocos">Cocos Capital 🥥 (Plan Pro)</option>
+                        <option value="eco">Eco Valores</option>
+                        <option value="veta">Veta Capital</option>
+                        <option value="bull">Bull Market Brokers</option>
+                        <option value="cohen">Cohen</option>
+                        <option value="adcap">Adcap</option>
+                        <option value="bcch">BCCH</option>
+                        <option value="custom">Personalizado</option>
+                    </select>
+                    <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
+                        Elegí un broker para completar automáticamente las URLs o seleccioná <strong>Personalizado</strong> para escribirlas a mano.
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="xomsApiUrl">API URL:</label>
+                    <input type="text" id="xomsApiUrl" class="input" placeholder="https://api.cocos.xoms.com.ar/">
+                </div>
+
+                <div class="form-group">
+                    <label for="xomsWsUrl">WebSocket URL:</label>
+                    <input type="text" id="xomsWsUrl" class="input" placeholder="wss://api.cocos.xoms.com.ar/">
+                </div>
+
+                <div class="form-group">
+                    <label for="xomsUser">Usuario:</label>
+                    <input type="text" id="xomsUser" class="input" placeholder="tu_usuario">
+                </div>
+
+                <div class="form-group">
+                    <label for="xomsPassword">Contraseña:</label>
+                    <input type="password" id="xomsPassword" class="input" placeholder="tu_contraseña">
+                </div>
+
+                <div class="form-group">
+                    <label for="xomsAccount">Cuenta:</label>
+                    <input type="text" id="xomsAccount" class="input" placeholder="tu_cuenta">
+                </div>
+
+                <div class="btn-row">
+                    <button id="saveXomsConfigBtn" class="btn btn-small">Guardar Configuración XOMS</button>
+                </div>
+
+                <div style="margin-top: 10px; font-size: 12px; color: #6b7280; line-height: 1.4;">
+                    Si no tenés acceso, solicitalo en
+                    <a href="https://procesador-opciones.mercadodecapitales.site" target="_blank" style="color: #6d28d9; text-decoration: underline;">
+                        https://procesador-opciones.mercadodecapitales.site
+                    </a>
                 </div>
             </div>
         </div>

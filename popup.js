@@ -1,5 +1,55 @@
 // Popup script ultra-simplificado para Procesador de opciones
 
+// Variable global para la API del procesador de mercado
+const API_PROCESADOR_MERCADO =
+  "https://api-procesador-mercado.mercadodecapitales.site/api/v1/operations";
+
+// Presets de conexiones XOMS (API + WebSocket)
+const XOMS_PRESETS = [
+  {
+    id: "cocos",
+    label: "Cocos Capital 🥥 (Plan Pro)",
+    apiUrl: "https://api.cocos.xoms.com.ar/",
+    wsUrl: "wss://api.cocos.xoms.com.ar/",
+  },
+  {
+    id: "eco",
+    label: "Eco Valores",
+    apiUrl: "https://api.eco.xoms.com.ar/",
+    wsUrl: "wss://api.eco.xoms.com.ar/",
+  },
+  {
+    id: "veta",
+    label: "Veta Capital",
+    apiUrl: "https://api.veta.xoms.com.ar/",
+    wsUrl: "wss://api.veta.xoms.com.ar/",
+  },
+  {
+    id: "bull",
+    label: "Bull Market Brokers",
+    apiUrl: "https://api.bull.xoms.com.ar/",
+    wsUrl: "wss://api.bull.xoms.com.ar/",
+  },
+  {
+    id: "cohen",
+    label: "Cohen",
+    apiUrl: "https://api.cohen.xoms.com.ar/",
+    wsUrl: "wss://api.cohen.xoms.com.ar/",
+  },
+  {
+    id: "adcap",
+    label: "Adcap",
+    apiUrl: "https://api.adcap.xoms.com.ar/",
+    wsUrl: "wss://api.adcap.xoms.com.ar/",
+  },
+  {
+    id: "bcch",
+    label: "BCCH",
+    apiUrl: "https://api.bcch.xoms.com.ar/",
+    wsUrl: "wss://api.bcch.xoms.com.ar/",
+  },
+];
+
 class PopupManager {
   constructor() {
     this.isLoading = false;
@@ -26,6 +76,14 @@ class PopupManager {
       // Cargar UI
       this.loadConfigToUI();
 
+      // Cargar configuración XOMS
+      await this.loadXomsConfig();
+
+      // Cargar preferencia de procesamiento (CSV u OMS) con delay para asegurar que el DOM esté listo
+      setTimeout(async () => {
+        await this.loadProcessPreference();
+      }, 100);
+
       // Verificar datos guardados con un pequeño delay para asegurar que todo esté listo
       setTimeout(async () => {
         await this.checkSavedData();
@@ -37,9 +95,11 @@ class PopupManager {
   }
 
   setupEventListeners() {
-    // Pestañas principales
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
+    // Pestañas principales (solo las que tienen data-tab, no data-process-tab)
+    document.querySelectorAll(".tab-btn[data-tab]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         this.switchMainTab(e.target.dataset.tab);
       });
     });
@@ -127,7 +187,9 @@ class PopupManager {
     }
 
     // Botón de copiar DeltaVega (copia rápida)
-    const quickCopyDeltaVegaBtn = document.getElementById("quickCopyDeltaVegaBtn");
+    const quickCopyDeltaVegaBtn = document.getElementById(
+      "quickCopyDeltaVegaBtn"
+    );
     if (quickCopyDeltaVegaBtn) {
       quickCopyDeltaVegaBtn.addEventListener("click", () =>
         this.copyOperationsData("all")
@@ -208,6 +270,52 @@ class PopupManager {
     if (saveConfigBtn) {
       saveConfigBtn.addEventListener("click", () => this.saveConfiguration());
     }
+
+    // Botón de guardar configuración XOMS
+    const saveXomsConfigBtn = document.getElementById("saveXomsConfigBtn");
+    if (saveXomsConfigBtn) {
+      saveXomsConfigBtn.addEventListener("click", () =>
+        this.saveXomsConfiguration()
+      );
+    }
+
+    // Selector de preset XOMS
+    const xomsPresetSelect = document.getElementById("xomsPresetSelect");
+    if (xomsPresetSelect) {
+      xomsPresetSelect.addEventListener("change", (e) =>
+        this.handleXomsPresetChange(e.target.value)
+      );
+    }
+
+    // Botón de procesar mediante OMS
+    const processOmsBtn = document.getElementById("processOmsBtn");
+    if (processOmsBtn) {
+      processOmsBtn.addEventListener("click", () =>
+        this.processOmsOperations()
+      );
+    }
+
+    // Botón de limpiar datos para OMS
+    const clearDataBtnOms = document.getElementById("clearDataBtnOms");
+    if (clearDataBtnOms) {
+      clearDataBtnOms.addEventListener("click", () =>
+        this.clearOperationsResults()
+      );
+    }
+
+    // Pestañas de procesamiento (CSV/OMS)
+    document.querySelectorAll(".process-tab-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // Importante: detener la propagación para evitar conflictos
+        const tabName =
+          e.currentTarget.dataset.processTab ||
+          e.target.closest(".process-tab-btn")?.dataset.processTab;
+        if (tabName) {
+          this.switchProcessTab(tabName);
+        }
+      });
+    });
   }
 
   switchMainTab(tabName) {
@@ -235,6 +343,133 @@ class PopupManager {
       tabName === "puts" ? "block" : "none";
     document.getElementById("previewAcciones").style.display =
       tabName === "acciones" ? "block" : "none";
+  }
+
+  switchProcessTab(tabName) {
+    try {
+      // Validar que tabName sea válido
+      if (!tabName || (tabName !== "csv" && tabName !== "oms")) {
+        console.error("Tab name inválido:", tabName);
+        return;
+      }
+
+      // Guardar preferencia (no esperar para no bloquear)
+      this.saveProcessPreference(tabName).catch((error) => {
+        console.error("Error guardando preferencia:", error);
+      });
+
+      // Actualizar botones de pestañas
+      document.querySelectorAll(".process-tab-btn").forEach((btn) => {
+        if (btn.dataset.processTab === tabName) {
+          btn.classList.add("active");
+        } else {
+          btn.classList.remove("active");
+        }
+      });
+
+      // Mostrar/ocultar contenido
+      const csvTab = document.getElementById("csvProcessTab");
+      const omsTab = document.getElementById("omsProcessTab");
+
+      if (!csvTab || !omsTab) {
+        console.error("No se encontraron las pestañas de procesamiento");
+        return;
+      }
+
+      if (tabName === "csv") {
+        csvTab.classList.add("active");
+        omsTab.classList.remove("active");
+      } else {
+        csvTab.classList.remove("active");
+        omsTab.classList.add("active");
+      }
+
+      // Actualizar advertencia de configuración OMS
+      if (tabName === "oms") {
+        // Usar setTimeout para asegurar que los elementos estén disponibles
+        setTimeout(() => {
+          try {
+            this.updateOmsConfigWarning();
+          } catch (error) {
+            console.error("Error actualizando advertencia OMS:", error);
+          }
+        }, 100);
+      }
+    } catch (error) {
+      console.error("Error en switchProcessTab:", error);
+      // Intentar mostrar al menos la pestaña CSV como fallback
+      try {
+        const csvTab = document.getElementById("csvProcessTab");
+        const omsTab = document.getElementById("omsProcessTab");
+        if (csvTab && omsTab) {
+          csvTab.classList.add("active");
+          omsTab.classList.remove("active");
+        }
+      } catch (fallbackError) {
+        console.error("Error en fallback:", fallbackError);
+      }
+    }
+  }
+
+  async saveProcessPreference(tabName) {
+    try {
+      await chrome.storage.local.set({
+        processPreference: tabName, // "csv" o "oms"
+      });
+    } catch (error) {
+      console.error("Error guardando preferencia de procesamiento:", error);
+    }
+  }
+
+  async loadProcessPreference() {
+    try {
+      // Verificar que los elementos existan antes de cambiar
+      const csvTab = document.getElementById("csvProcessTab");
+      const omsTab = document.getElementById("omsProcessTab");
+
+      if (!csvTab || !omsTab) {
+        console.warn("Las pestañas de procesamiento aún no están disponibles");
+        return;
+      }
+
+      const storageData = await chrome.storage.local.get(["processPreference"]);
+      const preference = storageData.processPreference || "csv";
+      this.switchProcessTab(preference);
+    } catch (error) {
+      console.error("Error cargando preferencia de procesamiento:", error);
+      // Por defecto mostrar CSV si hay error
+      try {
+        const csvTab = document.getElementById("csvProcessTab");
+        const omsTab = document.getElementById("omsProcessTab");
+        if (csvTab && omsTab) {
+          csvTab.classList.add("active");
+          omsTab.classList.remove("active");
+        }
+      } catch (fallbackError) {
+        console.error(
+          "Error en fallback de loadProcessPreference:",
+          fallbackError
+        );
+      }
+    }
+  }
+
+  updateOmsConfigWarning() {
+    try {
+      const warningDiv = document.getElementById("omsConfigWarning");
+      if (!warningDiv) {
+        console.warn("Elemento omsConfigWarning no encontrado");
+        return;
+      }
+
+      if (this.validateXomsConfig()) {
+        warningDiv.style.display = "none";
+      } else {
+        warningDiv.style.display = "block";
+      }
+    } catch (error) {
+      console.error("Error actualizando advertencia OMS:", error);
+    }
   }
 
   loadConfigToUI() {
@@ -1109,6 +1344,304 @@ class PopupManager {
     }
   }
 
+  async loadXomsConfig() {
+    try {
+      const storageData = await chrome.storage.local.get([
+        "xomsApiUrl",
+        "xomsWsUrl",
+        "xomsUser",
+        "xomsPassword",
+        "xomsAccount",
+      ]);
+
+      if (storageData.xomsApiUrl) {
+        document.getElementById("xomsApiUrl").value = storageData.xomsApiUrl;
+      }
+      if (storageData.xomsWsUrl) {
+        document.getElementById("xomsWsUrl").value = storageData.xomsWsUrl;
+      }
+      if (storageData.xomsUser) {
+        document.getElementById("xomsUser").value = storageData.xomsUser;
+      }
+      if (storageData.xomsPassword) {
+        document.getElementById("xomsPassword").value =
+          storageData.xomsPassword;
+      }
+      if (storageData.xomsAccount) {
+        document.getElementById("xomsAccount").value = storageData.xomsAccount;
+      }
+
+      // Ajustar selector de preset según URLs guardadas
+      const apiInput = document.getElementById("xomsApiUrl");
+      const wsInput = document.getElementById("xomsWsUrl");
+      const presetSelect = document.getElementById("xomsPresetSelect");
+
+      if (apiInput && wsInput && presetSelect) {
+        const apiVal = apiInput.value.trim();
+        const wsVal = wsInput.value.trim();
+
+        const matchedPreset = XOMS_PRESETS.find(
+          (p) => p.apiUrl === apiVal && p.wsUrl === wsVal
+        );
+
+        if (matchedPreset) {
+          presetSelect.value = matchedPreset.id;
+          apiInput.disabled = true;
+          wsInput.disabled = true;
+        } else {
+          presetSelect.value = "custom";
+          apiInput.disabled = false;
+          wsInput.disabled = false;
+        }
+      }
+    } catch (error) {
+      console.error("Error cargando configuración XOMS:", error);
+    }
+  }
+
+  async saveXomsConfiguration() {
+    try {
+      const apiUrl = document.getElementById("xomsApiUrl").value.trim();
+      const wsUrl = document.getElementById("xomsWsUrl").value.trim();
+      const user = document.getElementById("xomsUser").value.trim();
+      const password = document.getElementById("xomsPassword").value.trim();
+      const account = document.getElementById("xomsAccount").value.trim();
+
+      await chrome.storage.local.set({
+        xomsApiUrl: apiUrl,
+        xomsWsUrl: wsUrl,
+        xomsUser: user,
+        xomsPassword: password,
+        xomsAccount: account,
+      });
+
+      this.showStatus("Configuración XOMS guardada", "success");
+
+      // Actualizar advertencia si estamos en la pestaña OMS
+      const omsTab = document.getElementById("omsProcessTab");
+      if (omsTab && omsTab.classList.contains("active")) {
+        this.updateOmsConfigWarning();
+      }
+    } catch (error) {
+      console.error("Error guardando configuración XOMS:", error);
+      this.showStatus("Error guardando configuración XOMS", "error");
+    }
+  }
+
+  handleXomsPresetChange(presetId) {
+    const apiInput = document.getElementById("xomsApiUrl");
+    const wsInput = document.getElementById("xomsWsUrl");
+
+    if (!apiInput || !wsInput) return;
+
+    if (presetId === "custom") {
+      apiInput.disabled = false;
+      wsInput.disabled = false;
+
+      if (!apiInput.value) {
+        apiInput.value = "https://";
+      }
+      if (!wsInput.value) {
+        wsInput.value = "wss://";
+      }
+      return;
+    }
+
+    const preset = XOMS_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    apiInput.value = preset.apiUrl;
+    wsInput.value = preset.wsUrl;
+    apiInput.disabled = true;
+    wsInput.disabled = true;
+  }
+
+  validateXomsConfig() {
+    try {
+      const apiUrlEl = document.getElementById("xomsApiUrl");
+      const wsUrlEl = document.getElementById("xomsWsUrl");
+      const userEl = document.getElementById("xomsUser");
+      const passwordEl = document.getElementById("xomsPassword");
+      const accountEl = document.getElementById("xomsAccount");
+
+      if (!apiUrlEl || !wsUrlEl || !userEl || !passwordEl || !accountEl) {
+        return false;
+      }
+
+      const apiUrl = apiUrlEl.value.trim();
+      const wsUrl = wsUrlEl.value.trim();
+      const user = userEl.value.trim();
+      const password = passwordEl.value.trim();
+      const account = accountEl.value.trim();
+
+      return apiUrl && wsUrl && user && password && account;
+    } catch (error) {
+      console.error("Error validando configuración XOMS:", error);
+      return false;
+    }
+  }
+
+  async processOmsOperations() {
+    // Validar que la configuración esté completa
+    if (!this.validateXomsConfig()) {
+      const message =
+        'Para habilitar diríjase a configuraciones y complete la sección "conectar con mediante xoms". Para más información diríjase a "https://procesador-opciones.mercadodecapitales.site"';
+      this.showOmsStatus(message, "error");
+      return;
+    }
+
+    const symbolSelect = document.getElementById("symbolSelect");
+    const expirationSelect = document.getElementById("expirationSelect");
+    const useAveraging = document.getElementById("useAveraging");
+    const processOmsBtn = document.getElementById("processOmsBtn");
+
+    try {
+      processOmsBtn.disabled = true;
+      processOmsBtn.textContent = "Procesando...";
+      this.showOmsStatus("Consultando API OMS...", "info");
+
+      // Obtener configuración XOMS
+      const storageData = await chrome.storage.local.get([
+        "xomsApiUrl",
+        "xomsWsUrl",
+        "xomsUser",
+        "xomsPassword",
+        "xomsAccount",
+      ]);
+
+      // Preparar datos para la API
+      const requestData = {
+        environment: "LIVE",
+        api_url: storageData.xomsApiUrl,
+        ws_url: storageData.xomsWsUrl,
+        user: storageData.xomsUser,
+        password: storageData.xomsPassword,
+        account: storageData.xomsAccount,
+      };
+
+      // Hacer petición POST a la API
+      const response = await fetch(API_PROCESADOR_MERCADO, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      const apiResult = await response.json();
+
+      // Manejar error 403 (sin acceso)
+      if (
+        response.status === 403 ||
+        (apiResult.status === "error" && apiResult.error_code === 403)
+      ) {
+        const detail =
+          apiResult.detail || apiResult.message || "No posee acceso";
+        const web =
+          apiResult.web ||
+          "https://procesador-opciones.mercadodecapitales.site";
+        const errorMessage = `${detail}<br>Para solicitar acceso diríjase a: <a href="${web}" target="_blank" style="color: #4a90e2; text-decoration: underline;">${web}</a>`;
+        this.showOmsStatus(errorMessage, "error");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `Error en la API: ${response.status} ${response.statusText}`
+        );
+      }
+
+      if (apiResult.status !== "ok") {
+        throw new Error(apiResult.message || "Error en la respuesta de la API");
+      }
+
+      this.showOmsStatus("Procesando operaciones...", "info");
+
+      // Convertir datos de la API al formato que espera el procesador
+      const csvFormatData = this.convertApiDataToCsvFormat(
+        apiResult.operations
+      );
+
+      // Procesar usando la misma lógica que el CSV
+      const result = await window.operationsProcessor.processCsvData(
+        csvFormatData,
+        useAveraging.checked,
+        symbolSelect.value,
+        expirationSelect.value
+      );
+
+      if (result.success) {
+        this.showOmsStatus("Operaciones procesadas exitosamente", "success");
+        this.displayOperationsResults(result);
+        this.showResultsSection();
+
+        // Guardar la hora de procesamiento
+        await this.saveLastProcessTime();
+
+        await this.checkSavedData();
+      } else {
+        this.showOmsStatus(`Error: ${result.error}`, "error");
+      }
+    } catch (error) {
+      console.error("Error procesando operaciones OMS:", error);
+      this.showOmsStatus(
+        `Error procesando operaciones: ${error.message}`,
+        "error"
+      );
+    } finally {
+      processOmsBtn.disabled = false;
+      processOmsBtn.textContent = "Procesar mediante OMS";
+    }
+  }
+
+  convertApiDataToCsvFormat(operations) {
+    // Crear encabezados CSV
+    const headers = [
+      "event_subtype",
+      "ord_status",
+      "text",
+      "order_id",
+      "symbol",
+      "side",
+      "last_price",
+      "last_qty",
+    ];
+
+    // Función auxiliar para escapar valores CSV
+    const escapeCsvValue = (value) => {
+      if (value === null || value === undefined) return "";
+      const str = String(value);
+      // Si contiene comas, comillas o saltos de línea, envolver en comillas y escapar comillas
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Convertir cada operación al formato CSV
+    const csvLines = [headers.join(",")];
+
+    operations.forEach((op) => {
+      // Mapear los campos de la API al formato CSV
+      const row = [
+        escapeCsvValue("execution_report"), // event_subtype
+        escapeCsvValue(
+          op.Status === "FILLED" ? "Ejecutada" : "Parcialmente ejecutada"
+        ), // ord_status
+        escapeCsvValue(""), // text (vacío para evitar "Order Updated")
+        escapeCsvValue(op.OrderID), // order_id
+        escapeCsvValue(op.Symbol), // symbol
+        escapeCsvValue(op.Side), // side
+        escapeCsvValue(op.LastPx || op.Price), // last_price
+        escapeCsvValue(op.FilledQty), // last_qty
+      ];
+
+      csvLines.push(row.join(","));
+    });
+
+    return csvLines.join("\n");
+  }
+
   showStatus(message, type = "info") {
     const statusEl = document.getElementById("operationsStatus");
     if (statusEl) {
@@ -1122,8 +1655,34 @@ class PopupManager {
     }
   }
 
+  showOmsStatus(message, type = "info") {
+    const statusEl = document.getElementById("omsOperationsStatus");
+    if (statusEl) {
+      statusEl.innerHTML = `<div class="status ${type}">${message}</div>`;
+
+      if (type === "success") {
+        setTimeout(() => {
+          statusEl.innerHTML = "";
+        }, 5000);
+      }
+    }
+  }
+
   showError(message) {
     this.showStatus(message, "error");
+  }
+
+  showOmsStatus(message, type = "info") {
+    const statusEl = document.getElementById("omsOperationsStatus");
+    if (statusEl) {
+      statusEl.innerHTML = `<div class="status ${type}">${message}</div>`;
+
+      if (type === "success") {
+        setTimeout(() => {
+          statusEl.innerHTML = "";
+        }, 5000);
+      }
+    }
   }
 
   editExpiration(code) {
@@ -1232,22 +1791,24 @@ class PopupManager {
    */
   updateUIForFormat(format) {
     const isDeltaVega = format === "DeltaVega";
-    
+
     // Botones de copia rápida
     const quickCopyEPGB = document.getElementById("quickCopyButtonsEPGB");
-    const quickCopyDeltaVega = document.getElementById("quickCopyButtonsDeltaVega");
-    
+    const quickCopyDeltaVega = document.getElementById(
+      "quickCopyButtonsDeltaVega"
+    );
+
     if (quickCopyEPGB) {
       quickCopyEPGB.style.display = isDeltaVega ? "none" : "flex";
     }
     if (quickCopyDeltaVega) {
       quickCopyDeltaVega.style.display = isDeltaVega ? "flex" : "none";
     }
-    
+
     // Botones de copiar en resultados
     const copyEPGB = document.getElementById("copyButtonsEPGB");
     const copyDeltaVega = document.getElementById("copyButtonsDeltaVega");
-    
+
     if (copyEPGB) {
       copyEPGB.style.display = isDeltaVega ? "none" : "flex";
     }
