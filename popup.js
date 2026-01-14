@@ -7,6 +7,12 @@ const API_PROCESADOR_MERCADO =
 // Presets de conexiones XOMS (API + WebSocket)
 const XOMS_PRESETS = [
   {
+    id: "remarkets",
+    label: "PRUEBA REMARKETS",
+    apiUrl: "https://api.remarkets.primary.com.ar/",
+    wsUrl: "wss://api.remarkets.primary.com.ar/",
+  },
+  {
     id: "cocos",
     label: "Cocos Capital 🥥 (Plan Pro)",
     apiUrl: "https://api.cocos.xoms.com.ar/",
@@ -1354,44 +1360,58 @@ class PopupManager {
         "xomsAccount",
       ]);
 
-      if (storageData.xomsApiUrl) {
-        document.getElementById("xomsApiUrl").value = storageData.xomsApiUrl;
-      }
-      if (storageData.xomsWsUrl) {
-        document.getElementById("xomsWsUrl").value = storageData.xomsWsUrl;
-      }
-      if (storageData.xomsUser) {
-        document.getElementById("xomsUser").value = storageData.xomsUser;
-      }
-      if (storageData.xomsPassword) {
-        document.getElementById("xomsPassword").value =
-          storageData.xomsPassword;
-      }
-      if (storageData.xomsAccount) {
-        document.getElementById("xomsAccount").value = storageData.xomsAccount;
-      }
-
-      // Ajustar selector de preset según URLs guardadas
       const apiInput = document.getElementById("xomsApiUrl");
       const wsInput = document.getElementById("xomsWsUrl");
       const presetSelect = document.getElementById("xomsPresetSelect");
 
-      if (apiInput && wsInput && presetSelect) {
-        const apiVal = apiInput.value.trim();
-        const wsVal = wsInput.value.trim();
-
-        const matchedPreset = XOMS_PRESETS.find(
-          (p) => p.apiUrl === apiVal && p.wsUrl === wsVal
-        );
-
-        if (matchedPreset) {
-          presetSelect.value = matchedPreset.id;
+      // Si no hay configuración guardada, usar preset por defecto (remarkets)
+      if (!storageData.xomsApiUrl && !storageData.xomsWsUrl) {
+        const defaultPreset = XOMS_PRESETS.find((p) => p.id === "remarkets");
+        if (defaultPreset && apiInput && wsInput && presetSelect) {
+          apiInput.value = defaultPreset.apiUrl;
+          wsInput.value = defaultPreset.wsUrl;
+          presetSelect.value = "remarkets";
           apiInput.disabled = true;
           wsInput.disabled = true;
-        } else {
-          presetSelect.value = "custom";
-          apiInput.disabled = false;
-          wsInput.disabled = false;
+        }
+      } else {
+        // Cargar configuración guardada
+        if (storageData.xomsApiUrl) {
+          document.getElementById("xomsApiUrl").value = storageData.xomsApiUrl;
+        }
+        if (storageData.xomsWsUrl) {
+          document.getElementById("xomsWsUrl").value = storageData.xomsWsUrl;
+        }
+        if (storageData.xomsUser) {
+          document.getElementById("xomsUser").value = storageData.xomsUser;
+        }
+        if (storageData.xomsPassword) {
+          document.getElementById("xomsPassword").value =
+            storageData.xomsPassword;
+        }
+        if (storageData.xomsAccount) {
+          document.getElementById("xomsAccount").value =
+            storageData.xomsAccount;
+        }
+
+        // Ajustar selector de preset según URLs guardadas
+        if (apiInput && wsInput && presetSelect) {
+          const apiVal = apiInput.value.trim();
+          const wsVal = wsInput.value.trim();
+
+          const matchedPreset = XOMS_PRESETS.find(
+            (p) => p.apiUrl === apiVal && p.wsUrl === wsVal
+          );
+
+          if (matchedPreset) {
+            presetSelect.value = matchedPreset.id;
+            apiInput.disabled = true;
+            wsInput.disabled = true;
+          } else {
+            presetSelect.value = "custom";
+            apiInput.disabled = false;
+            wsInput.disabled = false;
+          }
         }
       }
     } catch (error) {
