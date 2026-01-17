@@ -2,6 +2,17 @@
 
 Todas las modificaciones notables de este proyecto se documentarán en este archivo.
 
+## [2.0.1] - 2025-01-XX
+
+### Fixes
+
+- **Corrección de agrupamiento de operaciones OMS**: Se corrigió la lógica de agrupamiento de operaciones recibidas desde sistemas OMS. Ahora las operaciones se agrupan por OrderID base (parte antes del guión) + Symbol + Side, en lugar de solo Symbol + Side. Esto permite identificar correctamente operaciones estratégicas que se ejecutan mediante múltiples órdenes individuales, evitando mezclar operaciones independientes del mismo símbolo. El timestamp ahora solo se utiliza para ordenar ejecuciones dentro del mismo grupo, no para separar grupos de operaciones.
+
+### Mejoras técnicas
+
+- Implementación de función auxiliar `getOrderIdBase()` para extraer el identificador base de operación desde el OrderID completo.
+- Mejora en la precisión del cálculo de VWAP (Volume Weighted Average Price) al agrupar correctamente todas las ejecuciones de la misma operación estratégica.
+
 ## [2.0.0] - 2025-01-XX
 
 ### Nuevas funcionalidades

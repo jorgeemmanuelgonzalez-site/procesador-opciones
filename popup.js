@@ -1519,7 +1519,6 @@ class PopupManager {
       processOmsBtn.disabled = true;
       processOmsBtn.textContent = "Procesando...";
       this.showOmsStatus("Consultando API OMS...", "info");
-
       // Obtener configuración XOMS
       const storageData = await chrome.storage.local.get([
         "xomsApiUrl",
@@ -1638,25 +1637,179 @@ class PopupManager {
       return str;
     };
 
-    // Convertir cada operación al formato CSV
+    // Agrupar operaciones por OrderID para identificar la última ejecución de cada orden
+    const operationsByOrder = {};
+    operations.forEach((op) => {
+      if (!operationsByOrder[op.OrderID]) {
+        operationsByOrder[op.OrderID] = [];
+      }
+      operationsByOrder[op.OrderID].push(op);
+    });
+
+    // Ordenar cada grupo por timestamp y encontrar la última ejecución de cada orden
+    const lastExecutionsByOrder = {};
+    Object.keys(operationsByOrder).forEach((orderId) => {
+      operationsByOrder[orderId].sort((a, b) => {
+        // Parsear correctamente el formato de timestamp "20260116-11:30:28.136-0300"
+        const dateA = a.TimestampUTC.replace(
+          /(\d{4})(\d{2})(\d{2})-(\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6"
+        );
+        const dateB = b.TimestampUTC.replace(
+          /(\d{4})(\d{2})(\d{2})-(\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6"
+        );
+        return new Date(dateA) - new Date(dateB);
+      });
+      // La última ejecución es la que tiene el FilledQty más alto (o la última por timestamp)
+      const lastExecution =
+        operationsByOrder[orderId][operationsByOrder[orderId].length - 1];
+      lastExecutionsByOrder[orderId] = lastExecution;
+    });
+
+    // Primero: Para cada orden, recopilar TODAS sus ejecuciones ordenadas por timestamp
+    const executionsByOrder = {};
+    Object.keys(operationsByOrder).forEach((orderId) => {
+      const orderExecutions = operationsByOrder[orderId];
+      orderExecutions.sort((a, b) => {
+        // Parsear correctamente el formato de timestamp "20260116-11:30:28.136-0300"
+        const dateA = a.TimestampUTC.replace(
+          /(\d{4})(\d{2})(\d{2})-(\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6"
+        );
+        const dateB = b.TimestampUTC.replace(
+          /(\d{4})(\d{2})(\d{2})-(\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6"
+        );
+        return new Date(dateA) - new Date(dateB);
+      });
+      // Incluir TODAS las ejecuciones de esta orden
+      executionsByOrder[orderId] = orderExecutions;
+    });
+
+    // Función auxiliar para extraer el OrderID base (parte antes del guión)
+    const getOrderIdBase = (orderId) => {
+      const parts = orderId.split("-");
+      return parts[0]; // Ej: "O0PwjZS5VAQB" de "O0PwjZS5VAQB-02052144"
+    };
+
+    // Segundo: Agrupar órdenes por OrderID base + Symbol + Side
+    // Esto agrupa órdenes que son parte de la misma operación estratégica
+    const ordersByOperation = {};
+    Object.keys(executionsByOrder).forEach((orderId) => {
+      const executions = executionsByOrder[orderId];
+      if (executions.length === 0) return;
+
+      const firstExecution = executions[0];
+      const orderIdBase = getOrderIdBase(orderId);
+      // Clave: OrderID base + Symbol + Side (identifica la operación)
+      const key = `${orderIdBase}_${firstExecution.Symbol}_${firstExecution.Side}`;
+      if (!ordersByOperation[key]) {
+        ordersByOperation[key] = [];
+      }
+      ordersByOperation[key].push({
+        orderId: orderId,
+        executions: executions,
+        lastExecution:
+          operationsByOrder[orderId][operationsByOrder[orderId].length - 1],
+      });
+    });
+
+    // Tercero: Para cada grupo de operación, usar TODAS las ejecuciones
     const csvLines = [headers.join(",")];
 
-    operations.forEach((op) => {
-      // Mapear los campos de la API al formato CSV
-      const row = [
-        escapeCsvValue("execution_report"), // event_subtype
-        escapeCsvValue(
-          op.Status === "FILLED" ? "Ejecutada" : "Parcialmente ejecutada"
-        ), // ord_status
-        escapeCsvValue(""), // text (vacío para evitar "Order Updated")
-        escapeCsvValue(op.OrderID), // order_id
-        escapeCsvValue(op.Symbol), // symbol
-        escapeCsvValue(op.Side), // side
-        escapeCsvValue(op.LastPx || op.Price), // last_price
-        escapeCsvValue(op.FilledQty), // last_qty
-      ];
+    Object.values(ordersByOperation).forEach((orders) => {
+      // Ordenar: primero FILLED, luego por mayor FilledQty
+      orders.sort((a, b) => {
+        const aStatus = a.lastExecution.Status;
+        const bStatus = b.lastExecution.Status;
+        if (aStatus === "FILLED" && bStatus !== "FILLED") return -1;
+        if (bStatus === "FILLED" && aStatus !== "FILLED") return 1;
+        return (
+          (b.lastExecution.FilledQty || 0) - (a.lastExecution.FilledQty || 0)
+        );
+      });
 
-      csvLines.push(row.join(","));
+      // Usar TODAS las ejecuciones de TODAS las órdenes del grupo (misma operación)
+      // Todas representan la misma operación estratégica (mismo OrderID base + Symbol + Side)
+      const executionRows = [];
+      let totalFromRealExecutions = 0;
+      let hasFilled = false;
+      let finalFilledQty = 0;
+      let commonOrderId = null;
+
+      // Recopilar todas las ejecuciones de todas las órdenes del grupo
+      orders.forEach((order) => {
+        if (order.lastExecution.Status === "FILLED") {
+          hasFilled = true;
+          finalFilledQty = Math.max(
+            finalFilledQty,
+            order.lastExecution.FilledQty || 0
+          );
+        }
+        if (!commonOrderId) {
+          commonOrderId = order.orderId;
+        }
+
+        order.executions.forEach((op) => {
+          // SOLO usar ejecuciones con LastQty > 0 y LastPx > 0 (ejecuciones reales)
+          if (op.LastQty && op.LastQty > 0 && op.LastPx && op.LastPx > 0) {
+            executionRows.push({
+              qty: op.LastQty,
+              price: op.LastPx,
+              op: op,
+            });
+            totalFromRealExecutions += op.LastQty;
+          }
+        });
+      });
+
+      // Si no hay FILLED, usar el mayor FilledQty
+      if (!hasFilled && orders.length > 0) {
+        finalFilledQty = Math.max(
+          ...orders.map((o) => o.lastExecution.FilledQty || 0)
+        );
+      }
+
+      // Ordenar ejecuciones por timestamp (más antigua primero)
+      // El timestamp solo se usa para ordenar dentro del grupo, no para separar grupos
+      // El formato es "20260116-11:30:28.136-0300", necesitamos parsearlo correctamente
+      executionRows.sort((a, b) => {
+        const dateA = a.op.TimestampUTC.replace(
+          /(\d{4})(\d{2})(\d{2})-(\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6"
+        );
+        const dateB = b.op.TimestampUTC.replace(
+          /(\d{4})(\d{2})(\d{2})-(\d{2}):(\d{2}):(\d{2})/,
+          "$1-$2-$3T$4:$5:$6"
+        );
+        return new Date(dateA) - new Date(dateB);
+      });
+
+      // Si la suma de LastQty no alcanza el FilledQty total, ajustar la última ejecución (más reciente)
+      const difference = finalFilledQty - totalFromRealExecutions;
+
+      if (difference > 0 && executionRows.length > 0) {
+        // Ajustar la última ejecución cronológicamente (la más reciente)
+        const lastRow = executionRows[executionRows.length - 1];
+        lastRow.qty += difference;
+      }
+
+      // Crear filas CSV con las ejecuciones procesadas
+      executionRows.forEach((row) => {
+        const csvRow = [
+          escapeCsvValue("execution_report"), // event_subtype
+          escapeCsvValue(hasFilled ? "Ejecutada" : "Parcialmente ejecutada"), // ord_status
+          escapeCsvValue(""), // text (vacío para evitar "Order Updated")
+          escapeCsvValue(commonOrderId), // order_id común para agrupar
+          escapeCsvValue(row.op.Symbol), // symbol
+          escapeCsvValue(row.op.Side), // side
+          escapeCsvValue(row.price), // last_price (precio real)
+          escapeCsvValue(row.qty), // last_qty (cantidad real o ajustada)
+        ];
+
+        csvLines.push(csvRow.join(","));
+      });
     });
 
     return csvLines.join("\n");
@@ -1690,19 +1843,6 @@ class PopupManager {
 
   showError(message) {
     this.showStatus(message, "error");
-  }
-
-  showOmsStatus(message, type = "info") {
-    const statusEl = document.getElementById("omsOperationsStatus");
-    if (statusEl) {
-      statusEl.innerHTML = `<div class="status ${type}">${message}</div>`;
-
-      if (type === "success") {
-        setTimeout(() => {
-          statusEl.innerHTML = "";
-        }, 5000);
-      }
-    }
   }
 
   editExpiration(code) {
