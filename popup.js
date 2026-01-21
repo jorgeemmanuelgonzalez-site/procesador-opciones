@@ -704,27 +704,52 @@ class PopupManager {
     const processBtn = document.getElementById("processOperationsBtn");
 
     if (!csvFileInput.files[0]) {
-      this.showStatus("Selecciona un archivo CSV", "error");
+      this.showStatus("Selecciona un archivo CSV o Excel", "error");
       return;
     }
+
+    const file = csvFileInput.files[0];
+    const fileName = file.name;
+    const isExcel = fileName.toLowerCase().endsWith(".xlsx");
 
     try {
       processBtn.disabled = true;
       processBtn.textContent = "Procesando...";
-      this.showStatus("Leyendo archivo CSV...", "info");
+      this.showStatus(
+        isExcel ? "Leyendo archivo Excel..." : "Leyendo archivo CSV...",
+        "info"
+      );
 
-      const csvText = await this.readFileAsText(csvFileInput.files[0]);
+      let fileData;
+      if (isExcel) {
+        // Verificar que XLSX esté disponible antes de procesar Excel
+        // Intentar múltiples formas de acceso a XLSX
+        const xlsxLib = typeof XLSX !== "undefined" ? XLSX : (typeof window !== "undefined" && window.XLSX ? window.XLSX : null);
+        if (!xlsxLib) {
+          throw new Error(
+            "SheetJS (XLSX) no está disponible. Por favor, espera unos segundos y recarga la extensión."
+          );
+        }
+        // Leer Excel como ArrayBuffer
+        fileData = await this.readFileAsArrayBuffer(file);
+      } else {
+        // Leer CSV como texto
+        fileData = await this.readFileAsText(file);
+      }
+
       this.showStatus("Procesando operaciones...", "info");
 
       const result = await window.operationsProcessor.processCsvData(
-        csvText,
+        fileData,
         useAveraging.checked,
         symbolSelect.value,
-        expirationSelect.value
+        expirationSelect.value,
+        fileName
       );
 
       if (result.success) {
-        this.showStatus("Operaciones procesadas exitosamente", "success");
+        const formatLabel = result.formatLabel || "CSV";
+        this.showStatus(`Operaciones procesadas exitosamente (${formatLabel})`, "success");
         this.displayOperationsResults(result);
         this.showResultsSection();
 
@@ -750,6 +775,15 @@ class PopupManager {
       reader.onload = (e) => resolve(e.target.result);
       reader.onerror = (e) => reject(new Error("Error leyendo archivo"));
       reader.readAsText(file);
+    });
+  }
+
+  readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (e) => reject(new Error("Error leyendo archivo Excel"));
+      reader.readAsArrayBuffer(file);
     });
   }
 
@@ -780,7 +814,14 @@ class PopupManager {
         (result.originalCallsCount !== callsCount ||
           result.originalPutsCount !== putsCount);
 
+      const formatLabel = result.formatLabel || "CSV";
+      const formatColor = result.detectedFormat === "OMS_BYMA" ? "#10b981" : "#8b5cf6";
+      
       let summaryHTML = `
+        <div class="summary-item">
+          <span class="summary-label">Formato:</span>
+          <span class="summary-value" style="background: ${formatColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${formatLabel}</span>
+        </div>
         <div class="summary-item">
           <span class="summary-label">Modo:</span>
           <span class="summary-value" style="background: #8b5cf6; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${
@@ -1609,7 +1650,7 @@ class PopupManager {
       );
     } finally {
       processOmsBtn.disabled = false;
-      processOmsBtn.textContent = "Procesar mediante OMS";
+      processOmsBtn.textContent = "Procesar mediante XOMS";
     }
   }
 

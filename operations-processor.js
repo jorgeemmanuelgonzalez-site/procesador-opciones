@@ -3,6 +3,641 @@
  * Versión simplificada con persistencia en chrome.storage
  */
 
+/**
+ * Parser para formato Excel Homebroker
+ * Convierte el formato Homebroker Excel al formato interno unificado
+ */
+class HomebrokerExcelParser {
+  /**
+   * Parsea un archivo Excel Homebroker
+   * @param {ArrayBuffer} arrayBuffer - Contenido del archivo Excel como ArrayBuffer
+   * @param {string} activeSymbol - Símbolo del activo elegido (ej: GFG, YPF, COM)
+   * @returns {Array} Array de operaciones en formato unificado
+   */
+  parse(arrayBuffer, activeSymbol) {
+    // Verificar que XLSX esté disponible
+    if (typeof XLSX === "undefined" && typeof window !== "undefined" && typeof window.XLSX === "undefined") {
+      throw new Error("SheetJS (XLSX) no está disponible. Por favor, recarga la extensión.");
+    }
+    
+    // Usar XLSX global o window.XLSX
+    const xlsxLib = typeof XLSX !== "undefined" ? XLSX : window.XLSX;
+    
+    // Leer el workbook usando SheetJS
+    const workbook = xlsxLib.read(arrayBuffer, { type: "array" });
+    
+    // Obtener la primera hoja (worksheet)
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    
+    // Extraer símbolos y operaciones filtrando por activeSymbol
+    const symbolsAndOperations = this.extractSymbolsAndOperations(worksheet, xlsxLib, activeSymbol);
+    
+    // Debug: verificar qué se encontró
+    if (!symbolsAndOperations || symbolsAndOperations.length === 0) {
+      console.warn("HomebrokerExcelParser: No se encontraron símbolos y operaciones. activeSymbol:", activeSymbol);
+      return [];
+    }
+    
+    // Convertir a formato interno unificado
+    const unifiedData = this.convertToUnifiedFormat(symbolsAndOperations);
+    
+    // Debug: verificar conversión
+    if (!unifiedData || unifiedData.length === 0) {
+      console.warn("HomebrokerExcelParser: No se pudieron convertir operaciones a formato unificado. symbolsAndOperations:", symbolsAndOperations);
+    }
+    
+    return unifiedData;
+  }
+
+  /**
+   * Extrae símbolos y operaciones del worksheet de Excel
+   * @param {Object} worksheet - Worksheet de SheetJS
+   * @param {Object} xlsxLib - Librería XLSX a usar
+   * @param {string} activeSymbol - Símbolo del activo elegido (ej: GFG, YPF, COM)
+   * @returns {Array} Array de objetos { symbol, operations }
+   */
+  extractSymbolsAndOperations(worksheet, xlsxLib, activeSymbol) {
+    // Convertir worksheet a JSON para facilitar el procesamiento
+    const jsonData = xlsxLib.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+    
+    const result = [];
+    let foundHeader = false;
+    const MAX_HEADER_SEARCH_ROWS = 20; // Buscar header solo en las primeras 20 filas
+    
+    // Normalizar activeSymbol
+    const normalizedActiveSymbol = (activeSymbol || "").toUpperCase().trim();
+    
+    for (let i = 0; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      
+      // Buscar cabecera "historico de ordenes" (más flexible, solo en primeras filas)
+      if (!foundHeader && i < MAX_HEADER_SEARCH_ROWS) {
+        const firstCell = row[0]?.toString().toLowerCase().trim();
+        // Buscar variaciones: "historico de ordenes", "histórico de órdenes", etc.
+        if (firstCell && (firstCell.includes("historico") || firstCell.includes("histórico")) && 
+            (firstCell.includes("ordenes") || firstCell.includes("órdenes") || firstCell.includes("orden"))) {
+          foundHeader = true;
+          continue;
+        }
+        // También buscar en otras celdas de la fila
+        for (let cellIdx = 0; cellIdx < Math.min(row.length, 5); cellIdx++) {
+          const cell = row[cellIdx]?.toString().toLowerCase().trim() || "";
+          if (cell && (cell.includes("historico") || cell.includes("histórico")) && 
+              (cell.includes("ordenes") || cell.includes("órdenes") || cell.includes("orden"))) {
+            foundHeader = true;
+            break;
+          }
+        }
+        if (foundHeader) continue;
+      }
+      
+      // Si no encontramos el header después de MAX_HEADER_SEARCH_ROWS, continuar de todas formas
+      // (puede que el Excel no tenga ese header o esté en otro formato)
+      if (i >= MAX_HEADER_SEARCH_ROWS && !foundHeader) {
+        foundHeader = true; // Continuar procesando aunque no encontremos el header
+      }
+      
+      if (!foundHeader) continue;
+      
+      // Verificar si es una fila de título (símbolo en primera columna)
+      const firstCell = row[0]?.toString().trim();
+      
+      // Debug: mostrar primeros caracteres de la primera celda para debugging
+      if (i < 50 && firstCell && firstCell.length > 0) {
+        console.log(`Fila ${i}, primera celda: "${firstCell.substring(0, 50)}"`);
+      }
+      
+      if (firstCell && this.isValidOptionSymbol(firstCell, normalizedActiveSymbol)) {
+        // Extraer solo la parte del símbolo (puede venir con texto adicional)
+        let symbol = firstCell.trim();
+        const spaceIndex = symbol.indexOf(" ");
+        if (spaceIndex > 0) {
+          symbol = symbol.substring(0, spaceIndex).trim();
+        }
+        
+        console.log(`Símbolo encontrado en fila ${i}: "${symbol}"`);
+        
+        // Encontramos un símbolo válido, ahora buscar el bloque de operaciones
+        // Las operaciones comienzan DOS filas abajo del símbolo (pero puede haber más espacio)
+        const operationsStartIndex = i + 2;
+        
+        // Buscar el header "Cpbt." desde operationsStartIndex (buscar hasta 20 filas abajo para ser más flexible)
+        let headerRowIndex = -1;
+        let columnIndices = null;
+        
+        for (let j = operationsStartIndex; j < jsonData.length && j < operationsStartIndex + 20; j++) {
+          const headerRow = jsonData[j];
+          if (this.isOperationsHeader(headerRow)) {
+            headerRowIndex = j;
+            columnIndices = this.detectColumnIndices(headerRow);
+            console.log(`Header encontrado en fila ${j}, columnIndices:`, columnIndices);
+            break;
+          }
+        }
+        
+        // Si encontramos el header, procesar operaciones hasta encontrar "Total"
+        if (columnIndices && columnIndices.cpbt !== -1 && columnIndices.cantidad !== -1) {
+          const operations = [];
+          
+          for (let k = headerRowIndex + 1; k < jsonData.length; k++) {
+            const operationRow = jsonData[k];
+            
+            // Verificar si es la fila "Total" (marca el fin del bloque)
+            // Buscar "Total" en cualquier columna, no solo en la primera
+            const hasTotal = operationRow.some((cell) => {
+              const cellStr = cell?.toString().toLowerCase().trim() || "";
+              return cellStr === "total";
+            });
+            
+            if (hasTotal) {
+              console.log(`Total encontrado en fila ${k}, fin del bloque para símbolo ${symbol}`);
+              break; // Fin del bloque
+            }
+            
+            // Verificar si es una fila vacía (puede haber filas vacías entre operaciones)
+            const isEmptyRow = operationRow.every((cell) => !cell || cell.toString().trim() === "");
+            if (isEmptyRow) {
+              continue;
+            }
+            
+            // Procesar la fila de operación
+            const operation = this.parseOperationRow(operationRow, columnIndices);
+            if (operation) {
+              operations.push(operation);
+            } else {
+              // Debug: mostrar por qué no se parseó la operación
+              const cpbt = operationRow[columnIndices.cpbt]?.toString().trim() || "";
+              const cantidad = operationRow[columnIndices.cantidad]?.toString().trim() || "";
+              const neto = columnIndices.neto !== -1 ? (operationRow[columnIndices.neto]?.toString().trim() || "") : "";
+              console.log(`Fila ${k} no parseada - cpbt: "${cpbt}", cantidad: "${cantidad}", neto: "${neto}"`);
+            }
+          }
+          
+          console.log(`Símbolo ${symbol}: ${operations.length} operaciones encontradas`);
+          
+          // Agregar el símbolo y sus operaciones al resultado
+          if (operations.length > 0) {
+            result.push({
+              symbol: symbol,
+              operations: operations,
+            });
+          } else {
+            console.warn(`Símbolo ${symbol}: No se encontraron operaciones válidas`);
+          }
+        } else {
+          console.warn(`Símbolo ${symbol}: No se encontró header de operaciones o columnas inválidas`);
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Detecta los índices de las columnas desde el header
+   * @param {Array} headerRow - Fila de encabezados
+   * @returns {Object} Objeto con índices de columnas
+   */
+  detectColumnIndices(headerRow) {
+    const rowLower = headerRow.map((cell) => cell?.toString().toLowerCase().trim() || "");
+    
+    const indices = {
+      cpbt: -1,
+      cantidad: -1,
+      precio: -1, // Se calculará desde Neto $ y Cantidad
+      neto: -1, // Columna "Neto $"
+      estado: -1,
+      numero: -1,
+    };
+    
+    for (let i = 0; i < rowLower.length; i++) {
+      const cell = rowLower[i];
+      if (cell.includes("cpbt") || cell.includes("comprobante")) {
+        indices.cpbt = i;
+      } else if (cell.includes("número") || cell.includes("numero") || cell.includes("nro")) {
+        indices.numero = i;
+      } else if (cell.includes("cantidad")) {
+        indices.cantidad = i;
+      } else if (cell.includes("neto") && (cell.includes("$") || cell.includes("pesos"))) {
+        indices.neto = i;
+      } else if (cell.includes("precio")) {
+        indices.precio = i; // Mantener para compatibilidad, pero preferir calcular desde Neto $
+      } else if (cell.includes("estado")) {
+        indices.estado = i;
+      }
+    }
+    
+    return indices;
+  }
+
+  /**
+   * Verifica si un símbolo es válido según el activo elegido y formato de opciones
+   * @param {string} symbol - Símbolo a validar (ej: "GFGC61452J", "VTPR")
+   * @param {string} activeSymbol - Símbolo del activo elegido (ej: GFG, YPF, COM)
+   * @returns {boolean}
+   */
+  isValidOptionSymbol(symbol, activeSymbol) {
+    if (!symbol || !activeSymbol) {
+      return false;
+    }
+
+    // Limpiar el símbolo: puede venir con espacios o caracteres adicionales
+    // Ejemplo: "GFGC90882D GFG(C) 9,088.200 DICIEMBRE" -> extraer solo "GFGC90882D"
+    let cleanedSymbol = symbol.toString().trim();
+    
+    // Si el símbolo contiene espacios, tomar solo la primera parte
+    // Ejemplo: "GFGC90882D GFG(C) 9,088.200 DICIEMBRE" -> "GFGC90882D"
+    const spaceIndex = cleanedSymbol.indexOf(" ");
+    if (spaceIndex > 0) {
+      cleanedSymbol = cleanedSymbol.substring(0, spaceIndex).trim();
+    }
+    
+    const normalizedSymbol = cleanedSymbol.toUpperCase();
+    const normalizedActiveSymbol = activeSymbol.toUpperCase().trim();
+    
+    // Verificar que el símbolo empiece con el activo elegido
+    // Ejemplo: Si activeSymbol es "GFG", buscar símbolos como "GFGC61452J", "GFGV61452J"
+    if (!normalizedSymbol.startsWith(normalizedActiveSymbol)) {
+      return false;
+    }
+
+    // Verificar que cumple con el formato de nomenclatura de opciones
+    // Formato: [ACTIVO][TIPO][STRIKE][VENCIMIENTO]
+    // Ejemplos: GFGC61452J, GFGV61452J, YPFC11753F, COMC61.0FE, GFGC90882D
+    // Debe empezar con el activo seguido de C (CALL) o V (PUT)
+    const optionPattern = new RegExp(`^${normalizedActiveSymbol}[CV][A-Z0-9.]+$`, "i");
+    
+    if (!optionPattern.test(normalizedSymbol)) {
+      return false;
+    }
+
+    // Validar longitud mínima (activo + tipo + al menos 1 carácter más)
+    if (normalizedSymbol.length < normalizedActiveSymbol.length + 2) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Verifica si una fila es el encabezado de operaciones
+   * @param {Array} row - Fila completa
+   * @returns {boolean}
+   */
+  isOperationsHeader(row) {
+    const headerCells = ["cpbt", "número", "cantidad", "precio", "neto", "estado"];
+    const rowLower = row.map((cell) => cell?.toString().toLowerCase().trim() || "");
+    
+    // Verificar si contiene las palabras clave del encabezado
+    let matches = 0;
+    for (const header of headerCells) {
+      if (rowLower.some((cell) => cell.includes(header))) {
+        matches++;
+      }
+    }
+    
+    return matches >= 3; // Al menos 3 de las columnas esperadas
+  }
+
+  /**
+   * Parsea una fila de operación usando los índices de columnas detectados
+   * @param {Array} row - Fila completa
+   * @param {Object} columnIndices - Índices de columnas detectados
+   * @returns {Object|null} Operación parseada o null si no es válida
+   */
+  parseOperationRow(row, columnIndices) {
+    // Validar que tenemos los índices necesarios (estado es opcional)
+    if (
+      columnIndices.cpbt === -1 ||
+      columnIndices.cantidad === -1
+    ) {
+      return null;
+    }
+    
+    // Necesitamos Cantidad y Neto $ para calcular el precio correctamente
+    if (columnIndices.neto === -1 && columnIndices.precio === -1) {
+      return null;
+    }
+    
+    const cpbt = row[columnIndices.cpbt]?.toString().trim() || "";
+    const cantidad = row[columnIndices.cantidad]?.toString().trim() || "";
+    const estado = columnIndices.estado !== -1 ? (row[columnIndices.estado]?.toString().trim() || "") : "";
+    const numero = columnIndices.numero !== -1 ? (row[columnIndices.numero]?.toString().trim() || "") : "";
+    
+    // Validar que tenemos datos válidos (cpbt y cantidad son obligatorios, estado es opcional)
+    if (!cpbt || !cantidad) {
+      return null;
+    }
+    
+    // La columna Cpbt. contiene códigos como "COPR" (Compra) o "VTPR" (Venta)
+    // No validar el símbolo aquí, ya que el símbolo está en el título del bloque
+    
+    // Filtrar operaciones "Anulada" solo si tenemos la columna estado
+    if (estado && estado.toLowerCase().includes("anulada")) {
+      return null;
+    }
+    
+    // Calcular precio desde Neto $ y Cantidad (preferido) o usar Precio directo
+    let precio = "";
+    if (columnIndices.neto !== -1) {
+      const neto = row[columnIndices.neto]?.toString().trim() || "";
+      if (neto) {
+        // Calcular: precio = (Neto $ / Cantidad) / 100
+        // Dividir por 100 porque las operaciones son a 100 acciones
+        const netoNum = this.parseNumber(neto);
+        const cantidadNum = this.parseNumber(cantidad);
+        
+        if (cantidadNum !== 0) {
+          precio = (netoNum / cantidadNum / 100).toString();
+        } else {
+          // Si cantidad es 0, intentar usar Precio directo si está disponible
+          if (columnIndices.precio !== -1) {
+            precio = row[columnIndices.precio]?.toString().trim() || "";
+            // Si usamos Precio directo, también dividir por 100
+            if (precio) {
+              const precioNum = this.parseNumber(precio);
+              if (precioNum !== 0) {
+                precio = (precioNum / 100).toString();
+              }
+            }
+          }
+        }
+      } else if (columnIndices.precio !== -1) {
+        // Fallback a Precio directo si Neto $ no está disponible
+        precio = row[columnIndices.precio]?.toString().trim() || "";
+        // Si usamos Precio directo, también dividir por 100
+        if (precio) {
+          const precioNum = this.parseNumber(precio);
+          if (precioNum !== 0) {
+            precio = (precioNum / 100).toString();
+          }
+        }
+      }
+    } else if (columnIndices.precio !== -1) {
+      // Usar Precio directo si Neto $ no está disponible
+      precio = row[columnIndices.precio]?.toString().trim() || "";
+      // Si usamos Precio directo, también dividir por 100
+      if (precio) {
+        const precioNum = this.parseNumber(precio);
+        if (precioNum !== 0) {
+          precio = (precioNum / 100).toString();
+        }
+      }
+    }
+    
+    // Validar que tenemos precio
+    if (!precio) {
+      return null;
+    }
+    
+    return {
+      cpbt: cpbt, // Mantener el símbolo original (no uppercase para preservar formato)
+      cantidad: cantidad,
+      precio: precio,
+      estado: estado,
+      numero: numero,
+    };
+  }
+
+  /**
+   * Convierte operaciones a formato interno unificado
+   * @param {Array} symbolsAndOperations - Array de { symbol, operations }
+   * @returns {Array} Operaciones en formato interno unificado
+   */
+  convertToUnifiedFormat(symbolsAndOperations) {
+    const unifiedOperations = [];
+    
+    symbolsAndOperations.forEach(({ symbol, operations }) => {
+      operations.forEach((op) => {
+        // Parsear números (formato argentino)
+        const cantidad = this.parseNumber(op.cantidad);
+        const precio = this.parseNumber(op.precio);
+        
+        // Debug: mostrar valores parseados
+        if (!isFinite(cantidad) || cantidad === 0 || !isFinite(precio) || precio === 0) {
+          console.log(`Operación rechazada - símbolo: "${symbol}", cantidad: "${op.cantidad}" -> ${cantidad}, precio: "${op.precio}" -> ${precio}`);
+          return;
+        }
+        
+        // El precio debe ser positivo (ya se calculó dividiendo por 100)
+        // Si es negativo, usar valor absoluto (puede haber errores de cálculo)
+        const precioFinal = Math.abs(precio);
+        
+        if (precioFinal <= 0) {
+          console.log(`Operación rechazada por precio inválido - símbolo: "${symbol}", precio: ${precio}`);
+          return;
+        }
+        
+        // Determinar side desde la cantidad: positiva = BUY, negativa = SELL
+        const side = cantidad > 0 ? "BUY" : "SELL";
+        
+        unifiedOperations.push({
+          symbol: symbol.trim(),
+          side: side,
+          last_price: precioFinal,
+          last_qty: Math.abs(cantidad), // Usar valor absoluto
+          order_id: op.numero || "",
+        });
+      });
+    });
+    
+    console.log(`convertToUnifiedFormat: ${unifiedOperations.length} operaciones convertidas de ${symbolsAndOperations.reduce((sum, so) => sum + so.operations.length, 0)} totales`);
+    
+    return unifiedOperations;
+  }
+
+  /**
+   * Parsea un número en formato argentino (punto=miles, coma=decimal)
+   * @param {string} value - Valor numérico como string
+   * @returns {number} Número parseado
+   */
+  parseNumber(value) {
+    if (!value || typeof value !== "string") return 0;
+
+    // Remover espacios
+    let cleaned = value.trim();
+
+    // Si tiene punto y coma, es formato argentino (punto=miles, coma=decimal)
+    if (cleaned.includes(".") && cleaned.includes(",")) {
+      // Remover puntos (miles) y reemplazar coma por punto (decimal)
+      cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+    } else if (cleaned.includes(",") && !cleaned.includes(".")) {
+      // Solo coma: puede ser miles o decimal
+      const parts = cleaned.split(",");
+      // Si hay exactamente 3 dígitos después de la coma, generalmente son miles
+      if (parts[1] && parts[1].length === 3) {
+        // Es miles, remover coma
+        cleaned = cleaned.replace(",", "");
+      } else if (parts[0].length > 3) {
+        // Más de 3 dígitos antes de la coma, probablemente es miles
+        cleaned = cleaned.replace(",", "");
+      } else {
+        // Es decimal, reemplazar coma por punto
+        cleaned = cleaned.replace(",", ".");
+      }
+    }
+
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+}
+
+/**
+ * Parser para formato CSV OMS-BYMA
+ * Convierte el formato OMS-BYMA al formato interno unificado
+ */
+class BymaCsvParser {
+  /**
+   * Parsea un string CSV OMS-BYMA y retorna array de objetos
+   * @param {string} csvText - Contenido del archivo CSV
+   * @returns {Array} Array de objetos con los datos parseados
+   */
+  parse(csvText) {
+    const lines = csvText.trim().split("\n");
+    if (lines.length === 0) return [];
+
+    // Parsear headers
+    const headers = this.parseCSVLine(lines[0])
+      .map((h) => h.trim().replace(/"/g, ""));
+
+    // Parsear filas
+    return lines.slice(1).map((line) => {
+      const values = this.parseCSVLine(line);
+      const row = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] || "";
+      });
+      return row;
+    });
+  }
+
+  /**
+   * Parsea una línea CSV manejando comillas y comas dentro de campos
+   * @param {string} line - Línea CSV
+   * @returns {Array} Array de valores
+   */
+  parseCSVLine(line) {
+    const result = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+
+    result.push(current.trim());
+    return result;
+  }
+
+  /**
+   * Convierte formato OMS-BYMA a formato interno unificado
+   * @param {Array} parsedData - Datos parseados del CSV OMS-BYMA
+   * @returns {Array} Datos en formato interno unificado
+   */
+  convertToUnifiedFormat(parsedData) {
+    return parsedData
+      .filter((row) => {
+        // Filtrar filas vacías o sin datos esenciales
+        return (
+          row.Especie &&
+          row.Lado &&
+          row.Precio &&
+          row.Cantidad &&
+          row.Especie.trim() !== "" &&
+          row.Lado.trim() !== ""
+        );
+      })
+      .map((row) => {
+        // Convertir formato de números argentino (punto=miles, coma=decimal)
+        const precio = this.parseNumber(row.Precio);
+        const cantidad = this.parseNumber(row.Cantidad);
+
+        // Convertir Lado: Compra -> BUY, Venta -> SELL
+        const side = row.Lado.trim().toLowerCase();
+        const sideMapped =
+          side === "compra" ? "BUY" : side === "venta" ? "SELL" : side.toUpperCase();
+
+        return {
+          symbol: row.Especie.trim(),
+          side: sideMapped,
+          last_price: precio,
+          last_qty: cantidad,
+          order_id: row.Orden || "", // Para posible consolidación futura
+        };
+      })
+      .filter((row) => {
+        // Filtrar filas con datos inválidos
+        return (
+          row.symbol &&
+          (row.side === "BUY" || row.side === "SELL") &&
+          isFinite(row.last_price) &&
+          !isNaN(row.last_price) &&
+          row.last_price > 0 &&
+          isFinite(row.last_qty) &&
+          !isNaN(row.last_qty) &&
+          row.last_qty > 0
+        );
+      });
+  }
+
+  /**
+   * Parsea un número en formato argentino BymaOMS (punto=miles, coma=decimal)
+   * Ejemplos: "3.749,170" -> 3749.17, "1,000" -> 1, "4,500" -> 4.50
+   * @param {string} value - Valor numérico como string
+   * @returns {number} Número parseado
+   */
+  parseNumber(value) {
+    if (!value || typeof value !== "string") return 0;
+
+    // Remover espacios y comillas
+    let cleaned = value.trim().replace(/"/g, "");
+
+    // Si tiene punto y coma, es formato argentino correcto (punto=miles, coma=decimal)
+    if (cleaned.includes(".") && cleaned.includes(",")) {
+      // Remover puntos (miles) y reemplazar coma por punto (decimal)
+      cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+    } else if (cleaned.includes(",") && !cleaned.includes(".")) {
+      // Solo coma: en formato BymaOMS, la coma es separador de decimales
+      const parts = cleaned.split(",");
+      if (parts.length === 2) {
+        const parteEntera = parts[0];
+        const parteDecimal = parts[1];
+        
+        // Si la parte decimal son solo ceros (ej: "1,000", "18,000"), es un entero
+        if (parteDecimal.match(/^0+$/)) {
+          cleaned = parteEntera;
+        } else {
+          // Los dígitos después de la coma son centavos (ej: "4,500" = 4.50, "4,510" = 4.51)
+          // Convertir a formato decimal estándar
+          cleaned = parteEntera + "." + parteDecimal;
+        }
+      } else {
+        // Múltiples comas, reemplazar la primera por punto
+        cleaned = cleaned.replace(",", ".");
+      }
+    } else if (cleaned.includes(".") && !cleaned.includes(",")) {
+      // Solo punto: en formato BymaOMS, punto es separador de miles
+      // Remover puntos para obtener el número entero
+      cleaned = cleaned.replace(/\./g, "");
+    }
+
+    const parsed = parseFloat(cleaned);
+    // Si el resultado es un entero (sin decimales), retornar como entero
+    // Esto maneja casos como "1,000" -> 1.0 -> 1
+    return isNaN(parsed) ? 0 : (parsed % 1 === 0 ? Math.floor(parsed) : parsed);
+  }
+}
+
 class OperationsProcessor {
   constructor() {
     this.originalData = [];
@@ -129,14 +764,84 @@ class OperationsProcessor {
   }
 
   /**
-   * Procesa un archivo CSV con datos de operaciones
-   * @param {string} csvText - Contenido del archivo CSV
+   * Procesa un archivo (CSV o Excel) con datos de operaciones
+   * Detecta automáticamente el formato y delega al procesador correspondiente
+   * @param {string|ArrayBuffer} fileData - Contenido del archivo (string para CSV, ArrayBuffer para Excel)
    * @param {boolean} useAveraging - Si usar promedios por strike o no
    * @param {string} activeSymbol - Símbolo del activo (GFG, YPF, COM, etc.)
    * @param {string} expiration - Letra de vencimiento (A, B, C, D, E, F, G, H, I, O, N, Z)
+   * @param {string} fileName - Nombre del archivo (opcional, para detectar extensión)
    * @returns {Object} Resultado del procesamiento
    */
   async processCsvData(
+    fileData,
+    useAveraging = false,
+    activeSymbol = "GFG",
+    expiration = "OCT",
+    fileName = ""
+  ) {
+    try {
+      // Detectar formato del archivo
+      const format = this.detectFormat(fileData, fileName);
+
+      // Delegar al procesador correspondiente
+      let result;
+      if (format === "XOMS_MATRIZ") {
+        result = await this.processXomsMatrizFormat(
+          fileData,
+          useAveraging,
+          activeSymbol,
+          expiration
+        );
+      } else if (format === "OMS_BYMA") {
+        result = await this.processBymaCsvFormat(
+          fileData,
+          useAveraging,
+          activeSymbol,
+          expiration
+        );
+      } else if (format === "HOMEBROKER_EXCEL") {
+        result = await this.processHomebrokerExcelFormat(
+          fileData,
+          useAveraging,
+          activeSymbol,
+          expiration
+        );
+      } else {
+        throw new Error(`Formato no soportado: ${format}`);
+      }
+
+      // Agregar información del formato detectado al resultado
+      if (result.success) {
+        result.detectedFormat = format;
+        result.formatLabel =
+          format === "XOMS_MATRIZ"
+            ? "XOMS Matriz"
+            : format === "OMS_BYMA"
+            ? "OMS-BYMA"
+            : "Homebroker Excel";
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Error procesando datos:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Procesa formato XOMS Matriz (formato actual que funciona)
+   * Contiene TODO el código original sin modificaciones
+   * @param {string} csvText - Contenido del archivo CSV
+   * @param {boolean} useAveraging - Si usar promedios por strike o no
+   * @param {string} activeSymbol - Símbolo del activo (GFG, YPF, COM, etc.)
+   * @param {string} expiration - Letra de vencimiento
+   * @returns {Object} Resultado del procesamiento
+   */
+  async processXomsMatrizFormat(
     csvText,
     useAveraging = false,
     activeSymbol = "GFG",
@@ -228,7 +933,229 @@ class OperationsProcessor {
         useAveraging: this.useAveraging,
       };
     } catch (error) {
-      console.error("Error procesando datos:", error);
+      console.error("Error procesando datos XOMS Matriz:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Procesa formato OMS-BYMA CSV (nuevo formato)
+   * Usa BymaCsvParser para convertir y luego funciones comunes de procesamiento
+   * @param {string} csvText - Contenido del archivo CSV
+   * @param {boolean} useAveraging - Si usar promedios por strike o no
+   * @param {string} activeSymbol - Símbolo del activo (GFG, YPF, COM, etc.)
+   * @param {string} expiration - Letra de vencimiento
+   * @returns {Object} Resultado del procesamiento
+   */
+  async processBymaCsvFormat(
+    csvText,
+    useAveraging = false,
+    activeSymbol = "GFG",
+    expiration = "OCT"
+  ) {
+    try {
+      // Configurar modo de procesamiento, símbolo activo y vencimiento
+      this.useAveraging = useAveraging;
+      this.activeSymbol = activeSymbol.toUpperCase();
+      this.expiration = expiration.toUpperCase();
+
+      // Parsear y convertir formato OMS-BYMA a formato interno unificado
+      const bymaParser = new BymaCsvParser();
+      const parsedData = bymaParser.parse(csvText);
+      const unifiedData = bymaParser.convertToUnifiedFormat(parsedData);
+
+      // Guardar datos originales
+      this.originalData = unifiedData;
+
+      // Para OMS-BYMA, no necesitamos filtrar ni consolidar como en XOMS Matriz
+      // Los datos ya vienen en formato unificado y listos para procesar
+      // Procesar símbolos y clasificar opciones usando funciones comunes
+      this.processedData = this.processSymbolsAndClassify(unifiedData);
+
+      if (this.processedData.length === 0) {
+        throw new Error(
+          "No se encontraron opciones para el vencimiento seleccionado"
+        );
+      }
+
+      // Separar CALLS, PUTS y ACCIONES
+      this.callsData = this.processedData.filter((op) => op.F === "CALL");
+      this.putsData = this.processedData.filter((op) => op.F === "PUT");
+      this.accionesData = this.processedData.filter((op) => op.F === "ACCION");
+
+      // Guardar cantidades originales antes de aplicar promedios
+      const originalCallsCount = this.callsData.length;
+      const originalPutsCount = this.putsData.length;
+
+      // Procesar según el modo seleccionado
+      if (this.useAveraging) {
+        this.callsData = this.processAveraging(this.callsData);
+        this.putsData = this.processAveraging(this.putsData);
+        this.accionesData = this.processAveragingAcciones(this.accionesData);
+      } else {
+        // Limpiar datos finales (remover columna F)
+        this.callsData = this.callsData.map((op) => ({
+          cantidad: op.cantidad,
+          base: op.base,
+          precio: op.precio,
+        }));
+
+        this.putsData = this.putsData.map((op) => ({
+          cantidad: op.cantidad,
+          base: op.base,
+          precio: op.precio,
+        }));
+
+        this.accionesData = this.accionesData.map((op) => ({
+          cantidad: op.cantidad,
+          simbolo: op.simbolo,
+          precio: op.precio,
+        }));
+      }
+
+      // Sanitizar y remover operaciones inválidas o neutras (cantidad 0 o precio inválido)
+      this.callsData = this.sanitizeOperations(this.callsData);
+      this.putsData = this.sanitizeOperations(this.putsData);
+      this.accionesData = this.sanitizeOperationsAcciones(this.accionesData);
+
+      // Guardar datos procesados y metadatos
+      this.lastProcessedFile = new Date().toISOString();
+      this.lastProcessedTime = new Date().toISOString();
+      await this.saveConfig();
+
+      return {
+        success: true,
+        totalOperations: this.processedData.length,
+        callsCount: this.callsData.length,
+        putsCount: this.putsData.length,
+        accionesCount: this.accionesData.length,
+        originalCallsCount: originalCallsCount,
+        originalPutsCount: originalPutsCount,
+        callsData: this.callsData,
+        putsData: this.putsData,
+        accionesData: this.accionesData,
+        lastProcessedTime: this.lastProcessedTime,
+        symbol: this.activeSymbol,
+        expiration: this.expiration,
+        useAveraging: this.useAveraging,
+      };
+    } catch (error) {
+      console.error("Error procesando datos OMS-BYMA:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Procesa formato Homebroker Excel (nuevo formato)
+   * Usa HomebrokerExcelParser para parsear y convertir, luego funciones comunes de procesamiento
+   * @param {ArrayBuffer} arrayBuffer - Contenido del archivo Excel como ArrayBuffer
+   * @param {boolean} useAveraging - Si usar promedios por strike o no
+   * @param {string} activeSymbol - Símbolo del activo (GFG, YPF, COM, etc.)
+   * @param {string} expiration - Letra de vencimiento
+   * @returns {Object} Resultado del procesamiento
+   */
+  async processHomebrokerExcelFormat(
+    arrayBuffer,
+    useAveraging = false,
+    activeSymbol = "GFG",
+    expiration = "OCT"
+  ) {
+    try {
+      // Configurar modo de procesamiento, símbolo activo y vencimiento
+      this.useAveraging = useAveraging;
+      this.activeSymbol = activeSymbol.toUpperCase();
+      this.expiration = expiration.toUpperCase();
+
+      // Parsear y convertir formato Homebroker Excel a formato interno unificado
+      const homebrokerParser = new HomebrokerExcelParser();
+      const unifiedData = homebrokerParser.parse(arrayBuffer, this.activeSymbol);
+
+      if (!unifiedData || unifiedData.length === 0) {
+        throw new Error("No se encontraron operaciones en el archivo Excel");
+      }
+
+      // Guardar datos originales
+      this.originalData = unifiedData;
+
+      // Para Homebroker Excel, los datos ya vienen en formato unificado
+      // Procesar símbolos y clasificar opciones usando funciones comunes
+      this.processedData = this.processSymbolsAndClassify(unifiedData);
+
+      if (this.processedData.length === 0) {
+        throw new Error(
+          "No se encontraron opciones para el vencimiento seleccionado"
+        );
+      }
+
+      // Separar CALLS, PUTS y ACCIONES
+      this.callsData = this.processedData.filter((op) => op.F === "CALL");
+      this.putsData = this.processedData.filter((op) => op.F === "PUT");
+      this.accionesData = this.processedData.filter((op) => op.F === "ACCION");
+
+      // Guardar cantidades originales antes de aplicar promedios
+      const originalCallsCount = this.callsData.length;
+      const originalPutsCount = this.putsData.length;
+
+      // Procesar según el modo seleccionado
+      if (this.useAveraging) {
+        this.callsData = this.processAveraging(this.callsData);
+        this.putsData = this.processAveraging(this.putsData);
+        this.accionesData = this.processAveragingAcciones(this.accionesData);
+      } else {
+        // Limpiar datos finales (remover columna F)
+        this.callsData = this.callsData.map((op) => ({
+          cantidad: op.cantidad,
+          base: op.base,
+          precio: op.precio,
+        }));
+
+        this.putsData = this.putsData.map((op) => ({
+          cantidad: op.cantidad,
+          base: op.base,
+          precio: op.precio,
+        }));
+
+        this.accionesData = this.accionesData.map((op) => ({
+          cantidad: op.cantidad,
+          simbolo: op.simbolo,
+          precio: op.precio,
+        }));
+      }
+
+      // Sanitizar y remover operaciones inválidas o neutras (cantidad 0 o precio inválido)
+      this.callsData = this.sanitizeOperations(this.callsData);
+      this.putsData = this.sanitizeOperations(this.putsData);
+      this.accionesData = this.sanitizeOperationsAcciones(this.accionesData);
+
+      // Guardar datos procesados y metadatos
+      this.lastProcessedFile = new Date().toISOString();
+      this.lastProcessedTime = new Date().toISOString();
+      await this.saveConfig();
+
+      return {
+        success: true,
+        totalOperations: this.processedData.length,
+        callsCount: this.callsData.length,
+        putsCount: this.putsData.length,
+        accionesCount: this.accionesData.length,
+        originalCallsCount: originalCallsCount,
+        originalPutsCount: originalPutsCount,
+        callsData: this.callsData,
+        putsData: this.putsData,
+        accionesData: this.accionesData,
+        lastProcessedTime: this.lastProcessedTime,
+        symbol: this.activeSymbol,
+        expiration: this.expiration,
+        useAveraging: this.useAveraging,
+      };
+    } catch (error) {
+      console.error("Error procesando datos Homebroker Excel:", error);
       return {
         success: false,
         error: error.message,
@@ -280,6 +1207,66 @@ class OperationsProcessor {
 
     result.push(current.trim());
     return result;
+  }
+
+  /**
+   * Detecta el formato del archivo (CSV o Excel)
+   * @param {string|ArrayBuffer} data - Contenido del archivo (string para CSV, ArrayBuffer para Excel)
+   * @param {string} fileName - Nombre del archivo (opcional, para detectar extensión)
+   * @returns {string} 'XOMS_MATRIZ', 'OMS_BYMA' o 'HOMEBROKER_EXCEL'
+   */
+  detectFormat(data, fileName = "") {
+    // Detectar por extensión primero
+    if (fileName && fileName.toLowerCase().endsWith(".xlsx")) {
+      return "HOMEBROKER_EXCEL";
+    }
+
+    // Si es ArrayBuffer, es Excel
+    if (data instanceof ArrayBuffer) {
+      return "HOMEBROKER_EXCEL";
+    }
+
+    // Si no es string, error
+    if (!data || typeof data !== "string") {
+      throw new Error("Archivo inválido o vacío");
+    }
+
+    const lines = data.trim().split("\n");
+    if (lines.length === 0) {
+      throw new Error("Archivo vacío");
+    }
+
+    // Parsear headers
+    const headers = this.parseCSVLine(lines[0])
+      .map((h) => h.trim().replace(/"/g, "").toLowerCase());
+
+    // Detectar formato XOMS Matriz: presencia de event_subtype, symbol, side, last_price, last_qty
+    const xomsMatrizHeaders = [
+      "event_subtype",
+      "symbol",
+      "side",
+      "last_price",
+      "last_qty",
+    ];
+    const hasXomsMatrizHeaders = xomsMatrizHeaders.every((header) =>
+      headers.includes(header)
+    );
+
+    // Detectar formato OMS-BYMA: presencia de Especie, Lado, Precio, Cantidad
+    const bymaHeaders = ["especie", "lado", "precio", "cantidad"];
+    const hasBymaHeaders = bymaHeaders.every((header) =>
+      headers.includes(header)
+    );
+
+    if (hasXomsMatrizHeaders) {
+      return "XOMS_MATRIZ";
+    } else if (hasBymaHeaders) {
+      return "OMS_BYMA";
+    } else {
+      throw new Error(
+        "Formato CSV no reconocido. Se espera formato XOMS Matriz u OMS-BYMA."
+      );
+    }
   }
 
   /**
@@ -377,10 +1364,20 @@ class OperationsProcessor {
       }
 
       if (putCallAccion === "ACCION") {
-        // Para acciones, extraer el símbolo del formato MERV - XMEV - GGAL - 24hs
+        // Para acciones, extraer el símbolo
+        // Puede venir en formato XOMS Matriz: MERV - XMEV - GGAL - 24hs
+        // o formato OMS-BYMA: COME (directo)
         const parts = row.symbol.split(" - ");
+        let simboloAccion;
         if (parts.length >= 3) {
-          const simboloAccion = parts[2]; // GGAL
+          // Formato XOMS Matriz
+          simboloAccion = parts[2]; // GGAL
+        } else {
+          // Formato OMS-BYMA: símbolo directo
+          simboloAccion = row.symbol.trim();
+        }
+
+        if (simboloAccion) {
           processed.push({
             cantidad: cantidad,
             simbolo: simboloAccion,
@@ -428,9 +1425,15 @@ class OperationsProcessor {
     }
 
     // Si no es opción, verificar si es acción del subyacente
-    // Las acciones tienen formato: MERV - XMEV - GGAL - 24hs
-    if (subyacente && symbol.includes(` - ${subyacente} - `)) {
-      return "ACCION";
+    // Las acciones pueden tener formato: MERV - XMEV - GGAL - 24hs (XOMS Matriz)
+    // o venir directamente como: COME (OMS-BYMA)
+    if (subyacente) {
+      if (symbol.includes(` - ${subyacente} - `)) {
+        return "ACCION";
+      } else if (symbol.trim() === subyacente) {
+        // Formato OMS-BYMA: símbolo directo sin prefijos
+        return "ACCION";
+      }
     }
 
     return "";
@@ -442,12 +1445,17 @@ class OperationsProcessor {
    * @returns {number|null} Valor del strike o null si no es válido
    */
   extractAndModifySymbol(symbol) {
-    const parts = symbol.split(" - ");
-    if (parts.length < 3) {
-      return null;
-    }
+    let relevantPart;
 
-    let relevantPart = parts[2];
+    // Detectar formato: si tiene " - " es formato XOMS Matriz, sino es formato OMS-BYMA
+    const parts = symbol.split(" - ");
+    if (parts.length >= 3) {
+      // Formato XOMS Matriz: MERV - XMEV - GFGV11753F - 24hs
+      relevantPart = parts[2];
+    } else {
+      // Formato OMS-BYMA: símbolo directo como GFGV11753F
+      relevantPart = symbol.trim();
+    }
 
     // Verificar terminaciones del vencimiento seleccionado usando configuración dinámica
     const expirationConfig = this.availableExpirations[this.expiration];
@@ -479,7 +1487,20 @@ class OperationsProcessor {
     }
 
     try {
-      // Aplicar reglas de strike: 4, 5 o 6 dígitos
+      // Si hay un punto en el símbolo, tratarlo como separador decimal
+      // Ejemplo: "61.0" en "COMC61.0FE" -> base = 61.0
+      if (relevantPart.includes(".")) {
+        // Extraer solo números y punto para preservar el formato decimal
+        const numericPart = relevantPart.replace(/[^0-9.]/g, "");
+        if (!numericPart) return null;
+        
+        // Parsear directamente como número decimal
+        const parsed = parseFloat(numericPart);
+        if (isNaN(parsed) || !isFinite(parsed)) return null;
+        return parsed;
+      }
+
+      // Aplicar reglas de strike: 4, 5 o 6 dígitos (sin punto)
       const digits = relevantPart.replace(/[^0-9]/g, "");
       if (!digits) return null;
 
