@@ -25,6 +25,9 @@ El Procesador de Opciones es una extensión especializada que permite procesar, 
 - **Exportación selectiva**: descarga todo o por tipo de opción
 - **Botones de copia rápida**: acceso directo a funciones de copia desde la parte superior
 - **Información temporal**: muestra la fecha y hora del último procesamiento exitoso
+- **Soporte para strikes con decimales**: procesamiento correcto de strikes que incluyen puntos decimales en el símbolo (ej: "COMC61.0FE" → strike 61.0)
+- **Integración con sistemas OMS**: procesamiento de operaciones directamente desde sistemas OMS mediante XOMS
+- **Presets de brokers preconfigurados**: conexión rápida con Cocos Capital, Eco Valores, Veta Capital, Bull Market Brokers, Cohen, Adcap y BCCH
 
 ## Símbolos soportados
 

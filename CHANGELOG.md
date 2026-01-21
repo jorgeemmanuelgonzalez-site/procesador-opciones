@@ -2,7 +2,19 @@
 
 Todas las modificaciones notables de este proyecto se documentarán en este archivo.
 
-## [2.0.1] - 2025-01-XX
+## [2.1.0] - 2026-01-21
+
+### Nuevas funcionalidades
+
+- **Soporte para strikes con puntos decimales**: Se agregó la capacidad de procesar correctamente strikes que incluyen puntos decimales directamente en el símbolo de la opción. Ejemplos: "COMC61.0FE" se procesa como strike 61.0, "YPFP45.5DI" se procesa como strike 45.5. Esto permite manejar correctamente opciones con strikes decimales sin necesidad de interpretación adicional.
+
+### Mejoras técnicas
+
+- Mejora en la función `extractAndModifySymbol()` para detectar y procesar strikes con puntos decimales en el símbolo.
+- Extracción directa de valores numéricos con punto decimal preservando el formato original del strike.
+- Validación mejorada para asegurar que los strikes decimales se parsean correctamente como números de punto flotante.
+
+## [2.0.1] - 2026-01-18
 
 ### Fixes
 
@@ -13,7 +25,7 @@ Todas las modificaciones notables de este proyecto se documentarán en este arch
 - Implementación de función auxiliar `getOrderIdBase()` para extraer el identificador base de operación desde el OrderID completo.
 - Mejora en la precisión del cálculo de VWAP (Volume Weighted Average Price) al agrupar correctamente todas las ejecuciones de la misma operación estratégica.
 
-## [2.0.0] - 2025-01-XX
+## [2.0.0] - 2026-01-15
 
 ### Nuevas funcionalidades
 
